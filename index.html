@@ -1,0 +1,27 @@
+<html>
+<body>
+<script>
+var url = "http://zax.landy.io:8081/app/947688e53a1928b1ff8449ce/event/predict";
+var body = '{   "session": "686114",   "timestamp": 1439405512728,   "identity": {     "browser": "ch",     "lang": "en-us",     "hour": "21",     "day": "3",     "mobile": "0",     "screen": "xl",     "os": "u",     "ref": "#"   } }';
+
+var xhr = new XMLHttpRequest();
+if (xhr) {
+xhr.open('POST', url, true);
+xhr.setRequestHeader('Content-Type', 'application/json');
+xhr.onreadystatechange = function() {
+if (xhr.readyState == 4) {
+if (xhr.status == 200) {
+return xhr.responseText;
+}
+}
+};
+
+if(typeof body == "undefined") {
+xhr.send();
+} else {
+xhr.send(body);
+}
+}
+</script>
+</body>
+</html>

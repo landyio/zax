@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-stylesheet type="text/xsl" href="ivy-report.xsl"?>
+<ivy-report version="1.0">
+	<info
+		organisation="default"
+		module="flp-build"
+		revision="0.1-SNAPSHOT"
+		extra-scalaVersion="2.10"
+		extra-sbtVersion="0.13"
+		conf="runtime-internal"
+		confs="compile, runtime, test, provided, optional, compile-internal, runtime-internal, test-internal, plugin, sources, docs, pom, scala-tool"
+		date="20150805224436"/>
+	<dependencies>
+		<module organisation="org.scala-sbt.plugins" name="sbt-onejar">
+			<revision name="0.8" status="release" pubdate="20130917105724" resolver="sbt-plugin-releases" artresolver="sbt-plugin-releases" extra-scalaVersion="2.10" extra-sbtVersion="0.13" downloaded="true" searched="true" default="false" conf="compile, default(compile)" position="0">
+				<metadata-artifact status="successful" details="" size="1432" time="2721" location="/opt/projects/W-FLP/.ivy2/cache/scala_2.10/sbt_0.13/org.scala-sbt.plugins/sbt-onejar/ivy-0.8.xml" searched="true" original-local-location="/opt/projects/W-FLP/.ivy2/cache/scala_2.10/sbt_0.13/org.scala-sbt.plugins/sbt-onejar/ivy-0.8.xml.original" origin-is-local="false" origin-location="https://repo.scala-sbt.org/scalasbt/sbt-plugin-releases/org.scala-sbt.plugins/sbt-onejar/scala_2.10/sbt_0.13/0.8/ivys/ivy.xml"/>
+				<caller organisation="default" name="flp-build" conf="compile, runtime-internal, runtime, optional" rev="0.8" rev-constraint-default="0.8" rev-constraint-dynamic="0.8" callerrev="0.1-SNAPSHOT" extra-scalaVersion="2.10" extra-sbtVersion="0.13"/>
+				<artifacts>
+					<artifact name="sbt-onejar" type="jar" ext="jar" status="successful" details="" size="147801" time="3752" location="/opt/projects/W-FLP/.ivy2/cache/scala_2.10/sbt_0.13/org.scala-sbt.plugins/sbt-onejar/jars/sbt-onejar-0.8.jar">
+						<origin-location is-local="false" location="https://repo.scala-sbt.org/scalasbt/sbt-plugin-releases/org.scala-sbt.plugins/sbt-onejar/scala_2.10/sbt_0.13/0.8/jars/sbt-onejar.jar"/>
+					</artifact>
+				</artifacts>
+			</revision>
+		</module>
+	</dependencies>
+</ivy-report>
