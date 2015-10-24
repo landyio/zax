@@ -1,26 +1,52 @@
-import sbt._
 import sbt.Keys._
+import sbt._
 
 //// config scala(c) ////
-autoScalaLibrary := false
-scalaVersion := "2.11.7"
-scalacOptions ++= Seq("-target:jvm-1.8")
-scalacOptions ++= Seq("-encoding", "utf8")
-scalacOptions ++= Seq("-unchecked", "-deprecation", "-feature")
-scalacOptions ++= Seq("-optimise")
+//autoScalaLibrary := false
+//scalaVersion := "2.11.7"
+//scalacOptions ++= Seq("-target:jvm-1.8")
+//scalacOptions ++= Seq("-encoding", "utf8")
+//scalacOptions ++= Seq("-unchecked", "-deprecation", "-feature")
+//scalacOptions ++= Seq("-optimise")
 // scalacOptions ++= Seq("-Yinline-warnings")
 // scalacOptions ++= Seq("-Xexperimental")
-ivyScala := ivyScala.value map { _.copy(overrideScalaVersion = true) }
+//ivyScala := ivyScala.value map { _.copy(overrideScalaVersion = true) }
 /////////////////////////
+
+lazy val common = Seq(
+  organization  := "io.landy",
+  version       := "0.0.1",
+
+  scalaVersion      := "2.11.7",
+  autoScalaLibrary  := false,
+
+  scalacOptions     := Seq("-target:jvm-1.8")
+                    ++ Seq("-encoding", "utf8")
+                    ++ Seq("-unchecked", "-deprecation", "-feature")
+                    ++ Seq("-optimise"),
+//                    ++ Seq("-Yinline-warnings")
+//                    ++ Seq("-Xexperimental")
+
+  ivyScala := ivyScala.value map { _.copy(overrideScalaVersion = true) }
+)
+
+/// Project ///////////////////////////////////////////////////////////////////////////////////////
+
+lazy val root = (project in file("."))
+  .settings(common: _*)
+  .settings(
+    name := "zax"
+  )
 
 
 //// use it with `sbt one-jar` ////
 import com.github.retronym.SbtOneJar._
+
 oneJarSettings
 ///////////////////////////////////
 
-name := "flp-control"
-version := "1.0"
+//name := "zax"
+//version := "0.0.1"
 
 resolvers += "sonatype-releases" at "https://oss.sonatype.org/content/repositories/releases/"
 resolvers += "sonatype-snapshots" at "https://oss.sonatype.org/content/repositories/snapshots/"
@@ -73,7 +99,7 @@ libraryDependencies ++= {
   // https://scalameter.github.io/
   // http://scalameter.github.io/home/gettingstarted/0.7/configuration/index.html
   Seq(
-    "com.storm-enroute" %% "scalameter" % "0.7-SNAPSHOT" % "test"
+    //"com.storm-enroute" %% "scalameter" % "0.7-SNAPSHOT" % "test"
   )
 }
 
@@ -85,3 +111,24 @@ libraryDependencies ++= {
     "org.apache.spark" %% "spark-mllib" % sparkVersion withSources()
   )
 }
+
+
+/// Local Bindings ////////////////////////////////////////////////////////////////////////////////
+
+lazy val runMongo = taskKey[Unit]("Starts the MongoDB instance locally")
+
+runMongo := {
+  println("MongoD started")
+  "mongod --fork --config /usr/local/etc/mongod.conf"!
+}
+
+lazy val stopMongo = taskKey[Unit]("Stops the MongoDB local instance")
+
+stopMongo := {
+  println("MongoD stopped")
+  "mongod --shutdown"!
+}
+
+lazy val runWithMongo = taskKey[Unit]("Runs the app starting MongoDB-daemon locally!")
+
+runWithMongo := Def.sequential(runMongo, (run in Compile).toTask(""), stopMongo).value
