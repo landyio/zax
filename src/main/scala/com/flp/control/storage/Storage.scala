@@ -35,20 +35,25 @@ class StorageActor extends DefaultActor {
     case Commands.LoadRequest(persister, id) => {
       val collection: BSONCollection = c(persister.collection)
       val future: Future[Option[_]] = collection.find( byId(id) ).one( reader = persister, ec = executionContext )
-      pipe( future.map { o => Commands.LoadResponse( o ) } ).to( sender() )
+
+      //pipe( future.map { o => Commands.LoadResponse( o ) } ).to( sender() )
+      future.map { o => Commands.LoadResponse( o ) } pipeTo sender()
     }
 
     case Commands.CountRequest(persister, selector) => {
       val collection: BSONCollection = c(persister.collection)
       val future: Future[Int] = collection.count( selector = Some(selector) )
-      pipe( future.map { o => Commands.CountResponse( o ) } ).to( sender() )
+
+      //pipe( future.map { o => Commands.CountResponse( o ) } ).to( sender() )
+      future.map { o => Commands.CountResponse( o ) } pipeTo sender()
     }
 
     case Commands.StoreRequest(persister, obj, asking) => {
       val collection: BSONCollection = c(persister.collection)
       val future: Future[WriteResult] = collection.insert( obj )( writer = persister, ec = executionContext )
       if (asking) {
-        pipe( future.map { res => Commands.StoreResponse( res.ok ) } ).to( sender() )
+        //pipe( future.map { res => Commands.StoreResponse( res.ok ) } ).to( sender() )
+        future.map { res => Commands.StoreResponse( res.ok ) } pipeTo sender()
       }
     }
 
@@ -56,7 +61,8 @@ class StorageActor extends DefaultActor {
       val collection: BSONCollection = c(persister.collection)
       val future: Future[WriteResult] = collection.update(selector, BSONDocument("$set" -> modifier)) ( selectorWriter = Storage.BSONDocumentIdentity, updateWriter = Storage.BSONDocumentIdentity, ec = executionContext )
       if (asking) {
-        pipe( future.map { res => Commands.UpdateResponse( res.ok ) } ).to( sender() )
+        //pipe( future.map { res => Commands.UpdateResponse( res.ok ) } ).to( sender() )
+        future.map { res => Commands.UpdateResponse( res.ok ) } pipeTo sender()
       }
     }
 
@@ -152,15 +158,15 @@ object Storage extends reactivemongo.bson.DefaultBSONHandlers {
   }
 
   trait PersisterR[T] extends PersisterBase[T] with BSONDocumentReader[T] {
-    override def toString: String = s"persister-r(${collection})"
+    override def toString: String = s"persister-r($collection)"
   }
 
   trait PersisterW[T] extends PersisterBase[T] with BSONDocumentWriter[T] {
-    override def toString: String = s"persister-w(${collection})"
+    override def toString: String = s"persister-w($collection)"
   }
 
   trait Persister[T] extends PersisterR[T] with PersisterW[T] {
-    override def toString: String = s"persister-rw(${collection})"
+    override def toString: String = s"persister-rw($collection)"
   }
 
   implicit val startEventBSON = new PersisterW[StartEvent] {

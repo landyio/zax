@@ -6,17 +6,17 @@ import org.apache.spark.mllib.tree.model.RandomForestModel
 
 import scala.util.Random
 
-/** */
 trait AppPredictor {
 
-  /** { param.key -> param } */
-  val params: Map[String, AppParamPredictor]
+  /** Variations?
+    *
+    */
+  private[instance] val params: Map[String, AppParamPredictor]
 
-  //
   def predict(identity: IdentityData.Type): Variation.Type = Variation(
     params
       .par // in-parallel
-      .map { case (k, p) => ( k -> p.predict(identity) ) }
+      .map { case (k, p) => k -> p.predict(identity) }
       .seq // back-to-normal-map
   )
 
@@ -31,58 +31,59 @@ class AppPredictorImpl(
 ) extends AppPredictor
 
 
-trait UserDataIdentifier {
+trait UserDataDescriptor {
   val name: String
-  val numerize: (Option[String] => Double)
+  val hash: (Option[String] => Double)
 }
 
-object UserDataIdentifier {
-  val default: (Option[String] => Double) = ( o => o.map { s => s.hashCode() % 16 } .getOrElse(0) .toDouble )
-  def apply(name: String, numerize: (Option[String] => Double) = default) = new UserDataIdentifierImpl(name, numerize)
+object UserDataDescriptor {
+  private val default = (o: Option[String]) => o.map { _.hashCode() % 16 }.getOrElse(0).toDouble
+  def apply(name: String, hash: (Option[String] => Double) = default) =
+    new UserDataDescriptorImpl(name, hash)
 }
 
-class UserDataIdentifierImpl(
+class UserDataDescriptorImpl(
   override val name: String,
-  override val numerize: (Option[String] => Double)
-) extends UserDataIdentifier
+  override val hash: (Option[String] => Double)
+) extends UserDataDescriptor
 
 
 trait AppParamPredictor {
 
-  val variants: Map[Int, String] // { variant.index -> variant.value }
-  val userdata: Seq[UserDataIdentifier] // { request parameter }
+  val variations: Map[Int, String] // { variant.index -> variant.value }
+  val userDataDescriptors: Seq[UserDataDescriptor] // { request parameter }
+
   var regression: RegressionModel = RegressionModel.empty // regression model
 
-  //
   def predict(identity: IdentityData.Type): String = {
     val factor: Double = 1e-2
-    def randomizer(): Double = (factor * Random.nextInt() / Int.MaxValue)
-    return variants
+    def rand(): Double = factor * Random.nextInt() / Int.MaxValue
+
+    variations
       .par // in-parallel
       .toStream
-      .map { e => ( probability(identity, e) -> e ) }
-      .map { case (p, (k, v)) => ( ( p + randomizer() ) -> v ) }
+      .map { e => probability(identity, e) -> e }
+      .map { case (p, (k, v)) => (p + rand()) -> v }
       .sortBy { case (p, _) => -p }
       .collectFirst { case (_, v) => v }
       .getOrElse { "" }
   }
 
-  //
-  def probability(params: Map[String, String], variant: (Int, String)): Double = {
-    val (index, _) = variant
-    val vector: Seq[Double] = userdata.map { ud => ud.numerize(params.get(ud.name)) } ++ Seq( index.toDouble )
-    return regression.predict(vector)
-  }
+  def probability(params: IdentityData.Type, variant: (Int, String)) =
+    variant match {
+      case (idx, _) =>
+        regression.predict(userDataDescriptors.map { d => d.hash(params.get(d.name)) } ++ Seq(idx.toDouble))
+    }
 
 }
 
 object AppParamPredictor {
-  def apply(variants: Map[Int, String], userdata: Seq[UserDataIdentifier]) = new AppParamPredictorImpl(variants, userdata)
+  def apply(variants: Map[Int, String], userdata: Seq[UserDataDescriptor]) = new AppParamPredictorImpl(variants, userdata)
 }
 
 class AppParamPredictorImpl(
-  override val variants: Map[Int, String],
-  override val userdata: Seq[UserDataIdentifier]
+                             override val variations: Map[Int, String],
+                             override val userDataDescriptors: Seq[UserDataDescriptor]
 ) extends AppParamPredictor
 
 
@@ -94,7 +95,7 @@ object RegressionModel {
   val empty: RegressionModel = new RegressionModel {
     override def predict(vector: Seq[Double]): Double = {
       // System.out.println(Thread.currentThread().getName)
-      return 0d
+      0d
     }
   }
 }
@@ -108,7 +109,7 @@ class SparkRegressionModel(
 ) extends RegressionModel {
   override def predict(vector: Seq[Double]): Double = {
     val v: DenseVector = new DenseVector( vector.toArray )
-    return model.predict(v)
+    model.predict(v)
   }
 }
 

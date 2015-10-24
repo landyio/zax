@@ -42,7 +42,7 @@ class AppInstanceActor(val appId: String) extends DefaultActor {
     val storage = this.storage()
 
     // construct real status
-    return for {
+    for {
 
       // run state (on function call moment)
       s <- Future { runState }
@@ -71,7 +71,7 @@ class AppInstanceActor(val appId: String) extends DefaultActor {
 
   /** @return config (variants) from {{{predictor}}} */
   private def config(): AppInstanceConfig = AppInstanceConfig(
-    variants = predictor.map( p => p.params.map { case (k,v) => k -> v.variants.values.toSeq } ).getOrElse( Map() )
+    variants = predictor.map( p => p.params.map { case (k,v) => k -> v.variations.values.toSeq } ).getOrElse( Map() )
   )
 
   /** @return {{{ Future { "load config from mongo, then apply it" } }}} */
@@ -83,12 +83,12 @@ class AppInstanceActor(val appId: String) extends DefaultActor {
       .map { opt => opt.getOrElse(AppInstanceConfigRecord.notFound(appId)) }
       .map { cfg => Commands.ApplyConfig(cfg) }
 
-    return f.flatMap { req => (self ? req).map { x => req } }
+    f.flatMap { req => (self ? req).map { x => req } }
   }
 
   /** @return {{{ Future { "load config from mongo, apply it, then ask self for the status" } }}} */
   private def reloadConfigAndGetStatus(): Future[GetStatusResponse] = {
-    return reloadConfig().flatMap {
+    reloadConfig().flatMap {
       s => self.ask(Commands.GetStatusRequest()).map {
         r => r.asInstanceOf[Commands.GetStatusResponse]
       }
@@ -96,24 +96,30 @@ class AppInstanceActor(val appId: String) extends DefaultActor {
   }
 
   /** @return true, */
-  private def applyConfig(cfgRec: AppInstanceConfigRecord): Unit = {
-    // TODO: read from cfgRec / cfgRec.config
-    // TODO: check for model, modify cfgRec.runState
-    val userdata: Seq[UserDataIdentifier] = Seq(
-      UserDataIdentifier("browser")
+  private def applyConfig(cfg: AppInstanceConfigRecord): Unit = {
+    // TODO: read from cfg / cfg.config
+    // TODO: check for model, modify cfg.runState
+
+    // TODO(kudinkin): Schema?
+
+    val userdata: Seq[UserDataDescriptor] = Seq(
+      UserDataDescriptor("browser")
     )
-    runState = cfgRec.runState // TODO: modify me
+    runState = cfg.runState // TODO: modify me
     predictor = runState match {
-      case AppInstanceRunState.Training => Some(buildPredictor(cfgRec.config, userdata))
-      case AppInstanceRunState.Prediction => Some(buildPredictor(cfgRec.config, userdata))
+      case AppInstanceRunState.Training   => Some(buildPredictor(cfg.config, userdata))
+      case AppInstanceRunState.Prediction => Some(buildPredictor(cfg.config, userdata))
       case _ => None
     }
   }
 
-  /** @return new {{{AppPredictor}}} for specified {{{config}}} and {{{userdata}}} */
-  private def buildPredictor(config: AppInstanceConfig, userdata: Seq[UserDataIdentifier]): AppPredictor = AppPredictor(
+  /**
+    * Predictor builder
+    *
+    * @return new {{{AppPredictor}}} for specified {{{config}}} and {{{userDataDescriptors}}} */
+  private def buildPredictor(config: AppInstanceConfig, userDataDescriptors: Seq[UserDataDescriptor]): AppPredictor = AppPredictor(
     config.variants.map {
-      case (k, v) => ( k -> AppParamPredictor(v.zipWithIndex.map { case (el, idx) => (idx -> el) } toMap, userdata) )
+      case (k, v) => k -> AppParamPredictor(v.zipWithIndex.map { case (el, idx) => idx -> el }.toMap, userDataDescriptors)
     }
   )
 
@@ -149,19 +155,20 @@ class AppInstanceActor(val appId: String) extends DefaultActor {
     val future: Future[Boolean] = (storage ? request).map {
       x => x.asInstanceOf[UpdateResponse].ok
     }
-    return future
+
+    future
   }
 
   /** @return {{{ Future{ "set `runState` = AppInstanceRunState.Training" } }}}*/
   private def changeRunStateToStart(): Future[GetStatusResponse] = {
-    return doUpdateRunStat(AppInstanceRunState.Training).flatMap {
+    doUpdateRunStat(AppInstanceRunState.Training).flatMap {
       x => reloadConfigAndGetStatus()
     }
   }
 
   /** @return {{{ Future{ "set `runState` = AppInstanceRunState.Stopped" } }}}*/
   private def changeRunStateToStop(): Future[GetStatusResponse] = {
-    return doUpdateRunStat(AppInstanceRunState.Stopped).flatMap {
+    doUpdateRunStat(AppInstanceRunState.Stopped).flatMap {
       x => reloadConfigAndGetStatus()
     }
   }
@@ -189,19 +196,19 @@ class AppInstanceActor(val appId: String) extends DefaultActor {
 }
 
 object AppInstanceRunState extends Enumeration {
-  val Loading = Value // transient state
-  val NoData = Value // finish state
-  val Stopped = Value
-  val Training = Value
-  val Prediction = Value
+  val Loading     = Value // transient state
+  val NoData      = Value // finish state
+  val Stopped     = Value
+  val Training    = Value
+  val Prediction  = Value
 }
 
 case class AppInstanceStatus(
-  val runState: AppInstanceRunState.Value = AppInstanceRunState.NoData,
-  val eventsAllStart: Int = 0,
-  val eventsAllFinish: Int = 0,
-  val eventsLearnStart: Int = 0,
-  val eventsLearnFinish: Int = 0
+  runState: AppInstanceRunState.Value = AppInstanceRunState.NoData,
+  eventsAllStart    : Int = 0,
+  eventsAllFinish   : Int = 0,
+  eventsLearnStart  : Int = 0,
+  eventsLearnFinish : Int = 0
 )
 
 object AppInstanceStatus {
@@ -209,7 +216,7 @@ object AppInstanceStatus {
 }
 
 case class AppInstanceConfig(
-  val variants: Map[String, Seq[String]]
+  variants: Map[String, Seq[String]]
 )
 
 object AppInstanceConfig {
@@ -228,13 +235,17 @@ trait AppInstanceChangeRunStateMessage extends AppInstanceAutoStartMessage[GetSt
 object AppInstance {
   import scala.concurrent.duration._
 
+  import reactivemongo.bson._
+  import org.apache.commons.lang3.StringUtils._
+
   def fixId(appId: String): String = appId match {
-    case "new" => return reactivemongo.bson.BSONObjectID.generate.stringify
-    case _ => return org.apache.commons.lang3.StringUtils.leftPad(appId, 24, '0')
+
+    case "new" => BSONObjectID.generate.stringify
+    case _ =>     leftPad(appId, 24, '0')
   }
 
   def actorName(appId: String): String = {
-    s"app-${appId}"
+    s"app-$appId"
   }
 
   object Commands {
@@ -251,7 +262,8 @@ object AppInstance {
     case class StartRequest() extends AppInstanceChangeRunStateMessage
     case class StopRequest() extends AppInstanceChangeRunStateMessage
     
-    val predictTimeout: Timeout = (500.milliseconds)
+    val predictTimeout: Timeout = 500.milliseconds
+
     case class PredictRequest(identity: IdentityData.Type) extends AppInstanceAutoStartMessage[PredictResponse]
     case class PredictResponse(variation: Variation.Type)
 
