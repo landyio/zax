@@ -10,29 +10,32 @@ class AppInstancesActor extends DefaultActor {
   private def appRef(appId: String): Option[ActorRef] = context.child(name = AppInstance.actorName(appId))
 
   @inline
-  private def appRef(appId: String, forceStart: Boolean): Option[ActorRef] = appRef(appId).orElse(forceStart match {
-    case true => { Some(reallyStartAppInstance(appId)) }
-    case false => { None }
-  })
+  private def appRef(appId: String, forceStart: Boolean): Option[ActorRef] =
+    appRef(appId).orElse(
+      if (forceStart)
+        Some(forceStartAppInstance(appId))
+      else
+        None
+    )
 
   @inline
   private def startAppInstance(appId: String): Boolean = {
-    return appRef(appId, forceStart = true) match {
-      case Some(_) => { true }
-      case None => { false }
+    appRef(appId, forceStart = true) match {
+      case Some(_) => true
+      case None => false
     }
   }
 
   @inline
   private def stopAppInstance(appId: String): Boolean = {
-    return appRef(appId) match {
-      case Some(ref) => { context.stop(ref); true }
-      case None => { true }
+    appRef(appId) match {
+      case Some(ref) => context.stop(ref)
     }
+    true
   }
 
   @inline
-  private def reallyStartAppInstance(appId: String): ActorRef = context.actorOf(
+  private def forceStartAppInstance(appId: String): ActorRef = context.actorOf(
     props = Props(classOf[AppInstanceActor], appId),
     name = AppInstance.actorName(appId)
   )
@@ -42,10 +45,11 @@ class AppInstancesActor extends DefaultActor {
   }
 
   def receive: Receive = trace {
-      case Commands.Forward(appId, message) => { appRef(appId, message.isInstanceOf[AppInstanceAutoStartMessage[_]]) match {
-        case Some(appRef) => { appRef.forward(message) }
-        case None => { sender ! akka.actor.Status.Failure(new NoSuchElementException(appId)) }
-      }}
+      case Commands.Forward(appId, message) =>
+        appRef(appId, forceStart = message.isInstanceOf[AppInstanceAutoStartMessage[_]]) match {
+          case Some(appRef) => appRef.forward(message)
+          case None         => sender ! akka.actor.Status.Failure(new NoSuchElementException(appId))
+        }
   }
 
 }

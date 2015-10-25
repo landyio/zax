@@ -223,7 +223,7 @@ trait PublicAppRoute extends AppRoute {
 
   override private[service] def appRoute(appId: String): Route =  {
       info(appId) ~
-      event(appId)
+        event(appId)
   }
 
 }
