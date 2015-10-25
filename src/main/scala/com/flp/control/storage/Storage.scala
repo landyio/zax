@@ -32,39 +32,31 @@ class StorageActor extends DefaultActor {
 
   def receive = trace {
 
-    case Commands.LoadRequest(persister, id) => {
+    case Commands.LoadRequest(persister, id) =>
       val collection: BSONCollection = c(persister.collection)
       val future: Future[Option[_]] = collection.find( byId(id) ).one( reader = persister, ec = executionContext )
 
-      //pipe( future.map { o => Commands.LoadResponse( o ) } ).to( sender() )
       future.map { o => Commands.LoadResponse( o ) } pipeTo sender()
-    }
 
-    case Commands.CountRequest(persister, selector) => {
+    case Commands.CountRequest(persister, selector) =>
       val collection: BSONCollection = c(persister.collection)
       val future: Future[Int] = collection.count( selector = Some(selector) )
 
-      //pipe( future.map { o => Commands.CountResponse( o ) } ).to( sender() )
       future.map { o => Commands.CountResponse( o ) } pipeTo sender()
-    }
 
-    case Commands.StoreRequest(persister, obj, asking) => {
+    case Commands.StoreRequest(persister, obj, asking) =>
       val collection: BSONCollection = c(persister.collection)
       val future: Future[WriteResult] = collection.insert( obj )( writer = persister, ec = executionContext )
       if (asking) {
-        //pipe( future.map { res => Commands.StoreResponse( res.ok ) } ).to( sender() )
         future.map { res => Commands.StoreResponse( res.ok ) } pipeTo sender()
       }
-    }
 
-    case Commands.UpdateRequest(persister, selector, modifier, asking) => {
+    case Commands.UpdateRequest(persister, selector, modifier, asking) =>
       val collection: BSONCollection = c(persister.collection)
       val future: Future[WriteResult] = collection.update(selector, BSONDocument("$set" -> modifier)) ( selectorWriter = Storage.BSONDocumentIdentity, updateWriter = Storage.BSONDocumentIdentity, ec = executionContext )
       if (asking) {
-        //pipe( future.map { res => Commands.UpdateResponse( res.ok ) } ).to( sender() )
         future.map { res => Commands.UpdateResponse( res.ok ) } pipeTo sender()
       }
-    }
 
   }
 

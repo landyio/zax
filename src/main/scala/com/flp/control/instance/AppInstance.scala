@@ -175,14 +175,14 @@ class AppInstanceActor(val appId: String) extends DefaultActor {
 
   /** akka callback */
   override def receive: Receive = trace {
-    case Commands.ApplyConfig(cfg) => { sender ! applyConfig(cfg) }
-    case Commands.GetStatusRequest() => { pipe( statusAsResponse() ).to( sender() ) }
-    case Commands.GetConfigRequest() => { sender ! Commands.GetConfigResponse(config()) }
-    case Commands.PredictRequest(params) => { sender ! Commands.PredictResponse(predict(params)) }
+    case Commands.ApplyConfig(cfg)        => sender ! applyConfig(cfg)
+    case Commands.GetStatusRequest()      => statusAsResponse() pipeTo sender()
+    case Commands.GetConfigRequest()      => sender ! Commands.GetConfigResponse(config())
+    case Commands.PredictRequest(params)  => sender ! Commands.PredictResponse(predict(params))
 
-    case Commands.SelfKillCheck() => { selfKillCheck() }
-    case Commands.StartRequest() => { pipe( changeRunStateToStart() ).to(sender()) }
-    case Commands.StopRequest() => { pipe( changeRunStateToStop() ).to(sender()) }
+    case Commands.SelfKillCheck() => selfKillCheck()
+    case Commands.StartRequest()  => changeRunStateToStart() pipeTo sender()
+    case Commands.StopRequest()   => changeRunStateToStop() pipeTo sender()
 
   }
 
