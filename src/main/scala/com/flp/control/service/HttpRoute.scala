@@ -8,6 +8,7 @@ import com.flp.control.boot.Boot
 import com.flp.control.instance._
 import com.flp.control.model._
 import com.flp.control.params.ServerParams
+import com.flp.control.service.serialization.JsonSerialization
 import com.flp.control.storage.Storage
 import spray.http.HttpHeaders.RawHeader
 import spray.http.MediaTypes._
@@ -36,29 +37,6 @@ class PublicHttpRouteActor extends HttpServiceActor with PublicAppRoute {
 
 
 trait PrivateAppRoute extends PublicAppRoute {
-
-  private implicit object AppInstanceConfigJsonFormat extends RootJsonFormat[AppInstanceConfig] {
-    def write(config: AppInstanceConfig): JsValue = config.variants.toJson
-    def read(value: JsValue): AppInstanceConfig = AppInstanceConfig(value.convertTo[Map[String, Seq[String]]])
-  }
-
-  private implicit object AppInstanceStatusJsonFormat extends RootJsonFormat[AppInstanceStatus] {
-    def write(status: AppInstanceStatus): JsObject = JsObject(
-      "runState" -> JsString(status.runState.toString),
-      "events" -> JsObject(
-        "all" -> JsObject(
-          "start" -> JsNumber(status.eventsAllStart),
-          "finish" -> JsNumber(status.eventsAllFinish)
-        ),
-        "learn" -> JsObject(
-          "start" -> JsNumber(status.eventsLearnStart),
-          "finish" -> JsNumber(status.eventsLearnFinish)
-        )
-
-      )
-    )
-    def read(value: JsValue): AppInstanceStatus = AppInstanceStatus.empty
-  }
 
   @inline
   private[service] def control(appId: String, principal: Principal): Route = pathPrefix("control") {
@@ -116,7 +94,7 @@ trait PrivateAppRoute extends PublicAppRoute {
       }
   }
 
-  override private[service] def appRoute(appId: String): Route =  {
+  override private[service] def appRoute(appId: String): Route = {
     super.appRoute(appId) ~
       //authenticate(authenticator) {
       //  principal: Principal => {
@@ -130,51 +108,6 @@ trait PrivateAppRoute extends PublicAppRoute {
 
 
 trait PublicAppRoute extends AppRoute {
-
-  private[service] implicit object StartEventJsonFormat extends RootJsonFormat[StartEvent] {
-    import Event._
-    def write(event: StartEvent): JsObject = JsObject(
-      `type` -> JsString("start"),
-      `session` -> JsString(event.session),
-      `timestamp` -> JsNumber(event.timestamp),
-      `identity` -> event.identity.toJson,
-      `variation` -> event.variation.toJson
-    )
-    def read(value: JsValue): StartEvent = StartEvent(
-      session = field[String](value, `session`, ""),
-      timestamp = field[Long](value, `timestamp`, 0l),
-      identity = field[IdentityData.Type](value, `identity`, IdentityData.empty ),
-      variation = field[Variation.Type](value, `variation`, Variation.empty )
-    )
-  }
-
-  private[service] implicit object PredictEventJsonFormat extends RootJsonFormat[PredictEvent] {
-    import Event._
-    def write(event: PredictEvent): JsObject = JsObject(
-      `type` -> JsString("start"),
-      `session` -> JsString(event.session),
-      `timestamp` -> JsNumber(event.timestamp),
-      `identity` -> event.identity.toJson
-    )
-    def read(value: JsValue): PredictEvent = PredictEvent(
-      session = field[String](value, `session`, ""),
-      timestamp = field[Long](value, `timestamp`, 0l),
-      identity = field[IdentityData.Type](value, `identity`, IdentityData.empty )
-    )
-  }
-
-  private[service] implicit object FinishEventJsonFormat extends RootJsonFormat[FinishEvent] {
-    import Event._
-    def write(event: FinishEvent): JsObject = JsObject(
-      `type` -> JsString("finish"),
-      `session` -> JsString(event.session),
-      `timestamp` -> JsNumber(event.timestamp)
-    )
-    def read(value: JsValue): FinishEvent = FinishEvent(
-      session = field[String](value, `session`, ""),
-      timestamp = field[Long](value, `timestamp`, 0l)
-    )
-  }
 
   @inline
   private[service] def predict(appId: String, identity: IdentityData.Type): Future[Variation.Type] = {
@@ -230,7 +163,7 @@ trait PublicAppRoute extends AppRoute {
 
 trait AppRoute extends Service {
 
-  private[service] val appsRef = Boot.actor(AppInstances.actorName)
+  private[service] val appsRef    = Boot.actor(AppInstances.actorName)
   private[service] val storageRef = Boot.actor(Storage.actorName)
 
   @inline
@@ -247,7 +180,7 @@ trait AppRoute extends Service {
 
   @inline
   private[service] def store[E](element: E)(implicit persister: Storage.PersisterW[E]): Unit = {
-    storageRef ! Storage.Commands.Store(element)( persister = persister )
+    storageRef ! Storage.Commands.Store(element)(persister = persister)
   }
 
   @inline
@@ -256,7 +189,7 @@ trait AppRoute extends Service {
 
   @inline
   private[service] def askApp[T](appId: String, message: AppInstanceMessage[T])(implicit timeout: Timeout): Future[T] =
-    askApps[T]( AppInstances.Commands.Forward(appId, message) )
+    askApps[T](AppInstances.Commands.Forward(appId, message))
 
   private[service] val appRoute: Route = pathPrefix("app" / Segment) {
     segment: String => {
@@ -269,24 +202,15 @@ trait AppRoute extends Service {
 }
 
 
-trait Service extends HttpService with SprayJsonSupport with DefaultJsonProtocol with DefaultTimeout {
+trait Service extends HttpService with JsonSerialization with DefaultTimeout {
 
   implicit val context: ActorContext
   implicit val executionContext: ExecutionContext = context.dispatcher
-
-  protected def field[T](value: JsValue, fieldName: String, default: => T)(implicit reader: JsonReader[Option[T]]): T = {
-    fromField[Option[T]](value, fieldName) (reader = reader) .getOrElse(default)
-  }
-
-  protected def field[T](value: JsValue, fieldName: String)(implicit reader: JsonReader[Option[T]]): T = {
-    fromField[Option[T]](value, fieldName) (reader = reader) .get
-  }
 
   protected def complete(result: Future[JsObject]): Route = onComplete[JsObject](result) {
     case Success(j) => complete(j)
     case Failure(t) => failWith(t)
   }
-
 
   protected def die(message: String = "No route for"): Route = extract(ctx => ctx) { ctx => {
     complete(
