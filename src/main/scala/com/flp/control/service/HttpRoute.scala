@@ -1,23 +1,23 @@
 package com.flp.control.service
 
-import akka.pattern.{ ask }
 import akka.actor._
+import akka.pattern.ask
 import akka.util.Timeout
 import com.flp.control.akka.DefaultTimeout
 import com.flp.control.boot.Boot
-import com.flp.control.params.ServerParams
 import com.flp.control.instance._
 import com.flp.control.model._
+import com.flp.control.params.ServerParams
 import com.flp.control.storage.Storage
 import spray.http.HttpHeaders.RawHeader
+import spray.http.MediaTypes._
+import spray.http._
 import spray.httpx.SprayJsonSupport
 import spray.json._
 import spray.routing._
-import spray.http._
-import MediaTypes._
 import spray.routing.authentication._
 
-import scala.concurrent.{Promise, ExecutionContext, Future}
+import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Failure, Success}
 
 class PrivateHttpRouteActor extends HttpServiceActor with PrivateAppRoute {
@@ -97,7 +97,7 @@ trait PrivateAppRoute extends PublicAppRoute {
       (path("start") & `json/post`) {
         extract(ctx => ctx) { ctx => {
           // TODO: XXX:
-          import AppInstance.Commands.{StartRequest, GetStatusResponse}
+          import AppInstance.Commands.{GetStatusResponse, StartRequest}
           val result: Future[JsObject] = askApp[GetStatusResponse](appId, StartRequest())
             .map { res => res.status }
             .map { v => JsObject("id" -> JsString(appId), "result" -> JsBoolean(true), "status" -> v.toJson.asJsObject) }
@@ -107,7 +107,7 @@ trait PrivateAppRoute extends PublicAppRoute {
       (path("stop") & `json/post`) {
         extract(ctx => ctx) { ctx => {
           // TODO: XXX:
-          import AppInstance.Commands.{StopRequest, GetStatusResponse}
+          import AppInstance.Commands.{GetStatusResponse, StopRequest}
           val result: Future[JsObject] = askApp[GetStatusResponse](appId, StopRequest())
             .map { res => res.status }
             .map { v => JsObject("id" -> JsString(appId), "result" -> JsBoolean(true), "status" -> v.toJson.asJsObject) }
@@ -179,7 +179,7 @@ trait PublicAppRoute extends AppRoute {
   @inline
   private[service] def predict(appId: String, identity: IdentityData.Type): Future[Variation.Type] = {
     import AppInstance.Commands.{PredictRequest, PredictResponse, predictTimeout}
-    return askApp[PredictResponse](appId, PredictRequest(identity))(timeout = predictTimeout)
+    askApp[PredictResponse](appId, PredictRequest(identity))(timeout = predictTimeout)
       .map { res => res.variation }
   }
 
@@ -192,8 +192,8 @@ trait PublicAppRoute extends AppRoute {
 
   @inline
   private[service] def event(appId: String): Route = pathPrefix("event") {
-    import com.flp.control.model._
     import Storage._
+    import com.flp.control.model._
     `options/origin` ~
       (path("start") & `json/post`) {
         entity(as[JsObject]) { json => clientIP { ip => {
@@ -237,29 +237,26 @@ trait AppRoute extends Service {
   private[service] def store[E](element: E, asking: Boolean = false)(implicit persister: Storage.PersisterW[E], timeout: Timeout): Future[Storage.Commands.StoreResponse] = {
     val message = Storage.Commands.Store(element, asking)( persister = persister )
     if (asking) {
-      return storageRef.ask(message).map { res => res.asInstanceOf[ Storage.Commands.StoreResponse ] }
+      storageRef.ask(message).map { res => res.asInstanceOf[ Storage.Commands.StoreResponse ] }
     } else {
       storageRef ! message
-      return null // there is no future here :)
-      // OLD: return Promise.failed(new UnsupportedOperationException()).future
+      null  // there is no future here :)
+            // OLD: return Promise.failed(new UnsupportedOperationException()).future
     }
   }
 
   @inline
   private[service] def store[E](element: E)(implicit persister: Storage.PersisterW[E]): Unit = {
-    val message = Storage.Commands.Store(element)( persister = persister )
-    storageRef ! message
+    storageRef ! Storage.Commands.Store(element)( persister = persister )
   }
 
   @inline
-  private[service] def askApps[T](message: Any)(implicit timeout: Timeout): Future[T] = {
-    return appsRef.ask(message).map { res => res.asInstanceOf[T] }
-  }
+  private[service] def askApps[T](message: Any)(implicit timeout: Timeout): Future[T] =
+    appsRef.ask(message).map { res => res.asInstanceOf[T] }
 
   @inline
-  private[service] def askApp[T](appId: String, message: AppInstanceMessage[T])(implicit timeout: Timeout): Future[T] = {
-    return askApps[T]( AppInstances.Commands.Forward(appId, message) )
-  }
+  private[service] def askApp[T](appId: String, message: AppInstanceMessage[T])(implicit timeout: Timeout): Future[T] =
+    askApps[T]( AppInstances.Commands.Forward(appId, message) )
 
   private[service] val appRoute: Route = pathPrefix("app" / Segment) {
     segment: String => {
@@ -269,7 +266,6 @@ trait AppRoute extends Service {
   }
 
   private[service] def appRoute(appId: String): Route
-
 }
 
 
@@ -278,26 +274,24 @@ trait Service extends HttpService with SprayJsonSupport with DefaultJsonProtocol
   implicit val context: ActorContext
   implicit val executionContext: ExecutionContext = context.dispatcher
 
-  protected def field[T](value: JsValue, fieldName: String, default: => T)
-      (implicit reader: JsonReader[Option[T]]): T = {
-    return fromField[Option[T]](value, fieldName) (reader = reader) .getOrElse(default)
+  protected def field[T](value: JsValue, fieldName: String, default: => T)(implicit reader: JsonReader[Option[T]]): T = {
+    fromField[Option[T]](value, fieldName) (reader = reader) .getOrElse(default)
   }
 
-  protected def field[T](value: JsValue, fieldName: String)
-      (implicit reader: JsonReader[Option[T]]): T = {
-    return fromField[Option[T]](value, fieldName) (reader = reader) .get
+  protected def field[T](value: JsValue, fieldName: String)(implicit reader: JsonReader[Option[T]]): T = {
+    fromField[Option[T]](value, fieldName) (reader = reader) .get
   }
 
   protected def complete(result: Future[JsObject]): Route = onComplete[JsObject](result) {
-    case Success(j) => { complete(j) }
-    case Failure(t) => { failWith(t) }
+    case Success(j) => complete(j)
+    case Failure(t) => failWith(t)
   }
 
 
   protected def die(message: String = "No route for"): Route = extract(ctx => ctx) { ctx => {
     complete(
       StatusCodes.BadRequest,
-      JsString(s"${message}: ${ctx.request.method} ${ctx.request.uri}").toString()
+      JsString(s"$message: ${ctx.request.method} ${ctx.request.uri}").toString()
     )
   }}
 
