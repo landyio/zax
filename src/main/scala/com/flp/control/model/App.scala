@@ -15,9 +15,9 @@ object Variation {
 }
 
 case class AppInstanceConfigRecord(
-  val appId: String,
-  val runState: AppInstanceRunState.Value = AppInstanceRunState.Stopped,
-  val config: AppInstanceConfig = AppInstanceConfig.empty
+  appId: String,
+  runState: AppInstanceRunState.Value = AppInstanceRunState.Stopped,
+  config: AppInstanceConfig = AppInstanceConfig.empty
 )
 
 object AppInstanceConfigRecord {

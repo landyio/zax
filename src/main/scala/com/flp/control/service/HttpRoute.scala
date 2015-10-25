@@ -13,7 +13,6 @@ import com.flp.control.storage.Storage
 import spray.http.HttpHeaders.RawHeader
 import spray.http.MediaTypes._
 import spray.http._
-import spray.httpx.SprayJsonSupport
 import spray.json._
 import spray.routing._
 import spray.routing.authentication._

@@ -3,6 +3,9 @@ package com.flp.control.instance
 import akka.actor.{Props, ActorRef}
 import com.flp.control.akka.DefaultActor
 
+/**
+  * This actor is a 'mediator' of the whole apps orchestra
+  */
 class AppInstancesActor extends DefaultActor {
   import AppInstances._
 
