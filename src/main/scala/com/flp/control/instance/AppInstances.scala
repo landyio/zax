@@ -31,8 +31,8 @@ class AppInstancesActor extends DefaultActor {
 
   @inline
   private def stopAppInstance(appId: String): Boolean = {
-    appRef(appId) match {
-      case Some(ref) => context.stop(ref)
+    appRef(appId) collect {
+      case ref => context.stop(ref)
     }
     true
   }
