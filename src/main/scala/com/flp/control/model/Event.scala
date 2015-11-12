@@ -19,35 +19,33 @@ object Event {
 
 
 trait PredictEventI extends Event {
-  val identity: IdentityData.Type
+  val identity: UserIdentity
 }
 
 case class PredictEvent(
   override val appId: String = null,
   override val session: String,
   override val timestamp: Long,
-  override val identity: IdentityData.Type
+  override val identity: UserIdentity
 ) extends PredictEventI
 
 
 
 trait StartEventI extends Event {
-  val identity: IdentityData.Type
-  val variation: Variation.Type
+  val identity: UserIdentity
+  val variation: Variation
 }
 
 case class StartEvent(
   override val appId: String = null,
   override val session: String,
   override val timestamp: Long,
-  override val identity: IdentityData.Type,
-  override val variation: Variation.Type
+  override val identity: UserIdentity,
+  override val variation: Variation
 ) extends StartEventI
 
 
-trait FinishEventI extends Event {
-
-}
+trait FinishEventI extends Event
 
 case class FinishEvent(
   override val appId: String = null,

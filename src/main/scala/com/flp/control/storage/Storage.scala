@@ -1,21 +1,18 @@
 package com.flp.control.storage
 
 import akka.pattern.pipe
-
 import com.flp.control.akka.DefaultActor
 import com.flp.control.instance._
 import com.flp.control.model._
-import com.typesafe.config.{ConfigFactory, Config}
-import reactivemongo.api.commands.WriteResult
-
-import scala.concurrent.Future
+import com.typesafe.config.{Config, ConfigFactory}
 
 class StorageActor extends DefaultActor {
 
-  import Storage._
   import reactivemongo.api._
   import reactivemongo.api.collections.bson._
   import reactivemongo.bson._
+
+  import Storage._
 
   private val config: Config = ConfigFactory.load()
   private val nodes: Seq[String] = config.getString("flp.mongo.hosts").split(",").toSeq.map { s => s.trim }
@@ -27,36 +24,41 @@ class StorageActor extends DefaultActor {
 
   // TODO: think about why the following is not a good idea:
   // TODO: val collections = scala.collection.mutable.Map[String, BSONCollection]()
-  // TODO: def c(p: Persister[_]): BSONCollection = collections.getOrElseUpdate( p.collection, database.collection[BSONCollection](p.collection) )
-  private def c(c: String): BSONCollection = database.collection[BSONCollection](c)
+  // TODO: def find(p: Persister[_]): BSONCollection = collections.getOrElseUpdate( p.collection, database.collection[BSONCollection](p.collection) )
+  private def find(c: String): BSONCollection = database.collection[BSONCollection](c)
 
   def receive = trace {
 
-    case Commands.LoadRequest(persister, id) =>
-      val collection: BSONCollection = c(persister.collection)
-      val future: Future[Option[_]] = collection.find( byId(id) ).one( reader = persister, ec = executionContext )
+    case Commands.LoadRequest(persister, selector, upTo) =>
+      implicit val reader = persister
 
-      future.map { o => Commands.LoadResponse( o ) } pipeTo sender()
+      val c = find(persister.collection)
+      val r = c .find(selector)
+                .cursor[persister.Target](ReadPreference.Nearest(filterTag = None))
+                .collect[List](upTo)
+
+      r.map { os => Commands.LoadResponse(os) } pipeTo sender()
+
 
     case Commands.CountRequest(persister, selector) =>
-      val collection: BSONCollection = c(persister.collection)
-      val future: Future[Int] = collection.count( selector = Some(selector) )
+      val c = find(persister.collection)
+      val r = c.count(selector = Some(selector))
 
-      future.map { o => Commands.CountResponse( o ) } pipeTo sender()
+      r.map { o => Commands.CountResponse(o) } pipeTo sender()
 
-    case Commands.StoreRequest(persister, obj, asking) =>
-      val collection: BSONCollection = c(persister.collection)
-      val future: Future[WriteResult] = collection.insert( obj )( writer = persister, ec = executionContext )
-      if (asking) {
-        future.map { res => Commands.StoreResponse( res.ok ) } pipeTo sender()
-      }
+    case Commands.StoreRequest(persister, obj) =>
+      val c = find(persister.collection)
+      val r = c.insert(obj)(writer = persister, ec = executionContext)
 
-    case Commands.UpdateRequest(persister, selector, modifier, asking) =>
-      val collection: BSONCollection = c(persister.collection)
-      val future: Future[WriteResult] = collection.update(selector, BSONDocument("$set" -> modifier)) ( selectorWriter = Storage.BSONDocumentIdentity, updateWriter = Storage.BSONDocumentIdentity, ec = executionContext )
-      if (asking) {
-        future.map { res => Commands.UpdateResponse( res.ok ) } pipeTo sender()
-      }
+      r.map { res => Commands.StoreResponse(res.ok) } pipeTo sender()
+
+    case Commands.UpdateRequest(persister, selector, modifier) =>
+      val w = Storage.BSONDocumentIdentity
+
+      val c = find(persister.collection)
+      val r = c.update(selector, BSONDocument("$set" -> modifier))(selectorWriter = w, updateWriter = w, ec = executionContext)
+
+      r.map { res => Commands.UpdateResponse(res.ok) } pipeTo sender()
 
   }
 
@@ -74,40 +76,49 @@ object Storage extends reactivemongo.bson.DefaultBSONHandlers {
   val `$oid` = "$oid"
 
   import reactivemongo.bson._
+
   def byId(id: Id) = BSONDocument(`_id` -> BSONObjectID(id))
 
   object Commands {
 
-    case class StoreRequest[T](persister: PersisterW[T], obj: T, asking: Boolean)
+    case class StoreRequest[T](persister: PersisterW[T], obj: T)
     case class StoreResponse(ok: Boolean)
 
     object Store {
-      def apply[T](obj: T, asking: Boolean = false)(implicit persister: PersisterW[T]): StoreRequest[T] = StoreRequest[T](persister, obj, asking)
+      def apply[T](obj: T)(implicit persister: PersisterW[T]): StoreRequest[T] = StoreRequest[T](persister, obj)
     }
 
-    case class LoadRequest[T](persister: PersisterR[T], id: Id)
-    case class LoadResponse[T](obj: Option[T])
+    case class LoadRequest  [T](persister: PersisterR[T], selector: BSONDocument, maxSize: Int)
+    case class LoadResponse [T](seq: Seq[T])
 
     object Load {
-      def apply[T](id: Id)(implicit persister: PersisterR[T]) = LoadRequest[T](persister, id)
+
+      def apply[T](id: Id)(implicit persister: PersisterR[T]) =
+        LoadRequest[T](persister, byId(id), 1)
+
+      def apply[T](selector: Producer[(String, BSONValue)]*)(maxSize: Int = Int.MaxValue)(implicit persister: PersisterR[T]) =
+        LoadRequest[T](persister, BSONDocument(selector:_*), maxSize)
+
     }
 
-    case class UpdateRequest[T](persister: PersisterBase[T], selector: BSONDocument, modifier: BSONDocument, asking: Boolean)
+    case class UpdateRequest[T](persister: PersisterBase[T], selector: BSONDocument, modifier: BSONDocument)
     case class UpdateResponse(ok: Boolean)
 
     object Update {
-      def selector[T](selector: Producer[(String, BSONValue)]*)(modifier: Producer[(String, BSONValue)]*)(asking: Boolean = false)(implicit persister: PersisterBase[T]) = UpdateRequest[T](
-        persister = persister,
-        selector = BSONDocument(selector:_*),
-        modifier = BSONDocument(modifier:_*),
-        asking = asking
-      )
-      def id[T](id: Id)(modifier: Producer[(String, BSONValue)]*)(asking: Boolean = false)(implicit persister: PersisterBase[T]) =UpdateRequest[T](
-        persister = persister,
-        selector = byId(id),
-        modifier = BSONDocument(modifier:_*),
-        asking = asking
-      )
+
+      def apply[T](selector: Producer[(String, BSONValue)]*)(modifier: Producer[(String, BSONValue)]*)(implicit persister: PersisterBase[T]) =
+        UpdateRequest[T](
+          persister = persister,
+          selector = BSONDocument(selector:_*),
+          modifier = BSONDocument(modifier:_*)
+        )
+
+      def apply[T](id: Id)(modifier: Producer[(String, BSONValue)]*)(implicit persister: PersisterBase[T]) =
+        UpdateRequest[T](
+          persister = persister,
+          selector = byId(id),
+          modifier = BSONDocument(modifier:_*)
+        )
     }
 
     case class CountRequest[T](persister: PersisterBase[T], selector: BSONDocument)
@@ -124,28 +135,29 @@ object Storage extends reactivemongo.bson.DefaultBSONHandlers {
 
   import reactivemongo.bson._
 
-  implicit def MapReader[B <: BSONValue, V](implicit reader: BSONReader[B, V]): BSONDocumentReader[Map[String, V]] = new BSONDocumentReader[Map[String, V]] {
-    def read(bson: BSONDocument): Map[String, V] = bson.elements.map { case (k, v) => k -> reader.read( v.asInstanceOf[B] ) } .toMap
-  }
+  implicit def MapReader[B <: BSONValue, V](implicit reader: BSONReader[B, V]): BSONDocumentReader[Map[String, V]] =
+    new BSONDocumentReader[Map[String, V]] {
+      def read(bson: BSONDocument): Map[String, V] = bson.elements.map { case (k, v) => k -> reader.read(v.asInstanceOf[B]) }.toMap
+    }
 
-  implicit def MapWriter[V, B <: BSONValue](implicit writer: BSONWriter[V, B]): BSONDocumentWriter[Map[String, V]] = new BSONDocumentWriter[Map[String, V]] {
-    def write(map: Map[String, V]): BSONDocument = BSONDocument( map.toStream.map { case (k, v) => k -> writer.write(v) } )
-  }
+  implicit def MapWriter[V, B <: BSONValue](implicit writer: BSONWriter[V, B]): BSONDocumentWriter[Map[String, V]] =
+    new BSONDocumentWriter[Map[String, V]] {
+      def write(map: Map[String, V]): BSONDocument = BSONDocument(map.toStream.map { case (k, v) => k -> writer.write(v) })
+    }
 
-  implicit def SeqReader[B <: BSONValue, V](implicit reader: BSONReader[B, V]): BSONReader[BSONArray, Seq[V]] = new BSONReader[BSONArray, Seq[V]] {
-    def read(bson: BSONArray): Seq[V] = bson.values.map { case v => reader.read( v.asInstanceOf[B] ) } .toSeq
-  }
+  implicit def SeqReader[B <: BSONValue, V](implicit reader: BSONReader[B, V]): BSONReader[BSONArray, Seq[V]] =
+    new BSONReader[BSONArray, Seq[V]] {
+      def read(bson: BSONArray): Seq[V] = bson.values.map { case v => reader.read(v.asInstanceOf[B]) }.toSeq
+    }
 
-  implicit def SeqWriter[V, B <: BSONValue](implicit writer: BSONWriter[V, B]): BSONWriter[Seq[V], BSONArray] = new BSONWriter[Seq[V], BSONArray] {
-    def write(seq: Seq[V]): BSONArray = BSONArray( seq.toStream.map { case (v) => writer.write(v) } )
-  }
-
-  implicit val appInstanceConfigBSON = new BSONDocumentReader[AppInstanceConfig] with BSONDocumentWriter[AppInstanceConfig] {
-    override def read(bson: BSONDocument): AppInstanceConfig = AppInstanceConfig(BSON.readDocument[Map[String,Seq[String]]]( bson ))
-    override def write(t: AppInstanceConfig): BSONDocument = BSON.write(t.variants)
-  }
+  implicit def SeqWriter[V, B <: BSONValue](implicit writer: BSONWriter[V, B]): BSONWriter[Seq[V], BSONArray] =
+    new BSONWriter[Seq[V], BSONArray] {
+      def write(seq: Seq[V]): BSONArray = BSONArray(seq.toStream.map { case (v) => writer.write(v) })
+    }
 
   trait PersisterBase[T] {
+    type Target = T
+
     val collection: String
   }
 
@@ -161,42 +173,110 @@ object Storage extends reactivemongo.bson.DefaultBSONHandlers {
     override def toString: String = s"persister-rw($collection)"
   }
 
-  implicit val startEventBSON = new PersisterW[StartEvent] {
-    import Event._
-    override val collection: String = "events"
-    override def write(t: StartEvent): BSONDocument = BSONDocument(
-      `appId` -> t.appId,
-      `type` -> `type:Start`,
-      `timestamp` -> t.timestamp,
-      `session` -> t.session,
-      `identity` -> BSON.writeDocument(t.identity),
-      `variation` -> BSON.writeDocument(t.variation)
-    )
+
+  //
+  // Persisters
+  //
+
+  // TODO(kudinkin): Move persisters to actual classes they serialize
+
+  implicit val startEventBSON =
+    new Persister[StartEvent] {
+      import Event._
+      val collection: String = "events"
+
+      override def write(t: StartEvent) =
+        BSONDocument(
+          `appId`     -> t.appId,
+          `type`      -> `type:Start`,
+          `timestamp` -> t.timestamp,
+          `session`   -> t.session,
+          `identity`  -> BSON.writeDocument(t.identity)(userIdentityBSON),
+          `variation` -> BSON.write(t.variation)(variationBSON)
+        )
+
+      override def read(bson: BSONDocument) =
+        StartEvent(
+          appId     = bson.getAs[String]        (`appId`)     .get,
+          session   = bson.getAs[String]        (`session`)   .get,
+          timestamp = bson.getAs[Long]          (`timestamp`) .get,
+          identity  = bson.getAs[UserIdentity]  (`identity`)  .get,
+          variation = bson.getAs[Variation]     (`variation`) .get
+        )
+    }
+
+  implicit val finishEventBSON =
+    new Persister[FinishEvent] {
+      import Event._
+      override val collection: String = "events"
+
+      override def write(t: FinishEvent) =
+        BSONDocument(
+          `appId`     -> t.appId,
+          `type`      -> `type:Finish`,
+          `timestamp` -> t.timestamp,
+          `session`   -> t.session
+        )
+
+      override def read(bson: BSONDocument) =
+        FinishEvent(
+          appId     = bson.getAs[String]  (`appId`)     .get,
+          session   = bson.getAs[String]  (`session`)   .get,
+          timestamp = bson.getAs[Long]    (`timestamp`) .get
+        )
+    }
+
+  implicit val userIdentityBSON =
+    new BSONDocumentReader[UserIdentity] with BSONDocumentWriter[UserIdentity] {
+
+      override def write(uid: UserIdentity): BSONDocument =
+        BSON.writeDocument(uid.params)
+
+      override def read(bson: BSONDocument): UserIdentity =
+        bson.asOpt[UserIdentity.Params] collect { case ps => UserIdentity(ps) } getOrElse UserIdentity.empty
+    }
+
+  implicit val variationBSON =
+    new BSONReader[BSONString, Variation] with BSONWriter[Variation, BSONString] {
+
+      override def write(v: Variation): BSONString =
+        BSON.write(v.id)
+
+      override def read(bson: BSONString): Variation =
+        Variation(bson.value)
+    }
+
+  // TODO(kudinkin): Merge
+
+  implicit val appInstanceConfigBSON =
+    new BSONDocumentReader[AppInstanceConfig] with BSONDocumentWriter[AppInstanceConfig] {
+
+    override def read(bson: BSONDocument): AppInstanceConfig = {
+      val conf = BSON.readDocument[Map[String, Seq[Variation]]](bson)
+      AppInstanceConfig(conf("variations"))
+    }
+
+    override def write(t: AppInstanceConfig): BSONDocument =
+      BSON.write(Map("variations" -> t.variations))
   }
 
-  implicit val finishEventBSON = new PersisterW[FinishEvent] {
-    import Event._
-    override val collection: String = "events"
-    override def write(t: FinishEvent): BSONDocument = BSONDocument(
-      `appId` -> t.appId,
-      `type` -> `type:Finish`,
-      `timestamp` -> t.timestamp,
-      `session` -> t.session
-    )
-  }
+  implicit val appInstanceConfigRecordBSON =
+    new Persister[AppInstanceConfig.Record] {
+      import AppInstanceConfig.Record._
+      val collection: String = "appconfig"
 
-  implicit val appInstanceConfigRecordBSON = new Persister[AppInstanceConfigRecord] {
-    override val collection: String = "appconfig"
-    override def write(t: AppInstanceConfigRecord): BSONDocument = BSONDocument(
-      `_id` -> BSONObjectID( t.appId ),
-      AppInstanceConfigRecord.`runState` -> BSON.write( t.runState.toString ),
-      AppInstanceConfigRecord.`config` -> BSON.writeDocument(t.config)
-    )
-    override def read(bson: BSONDocument): AppInstanceConfigRecord = AppInstanceConfigRecord(
-      appId = bson.getAs[BSONObjectID]("_id").map { i => i.stringify } getOrElse { "" },
-      runState = bson.getAs[String]("runState").map { s => AppInstanceRunState.withName(s) } getOrElse { AppInstanceRunState.Stopped },
-      config = bson.getAs[AppInstanceConfig]("config").get
-    )
-  }
+      override def write(t: AppInstanceConfig.Record): BSONDocument =
+        BSONDocument(
+          `_id`       -> BSONObjectID(t.appId),
+          `runState`  -> BSON.write(t.runState.toString),
+          `config`    -> BSON.writeDocument(t.config)
+        )
 
+      override def read(bson: BSONDocument): AppInstanceConfig.Record =
+        AppInstanceConfig.Record(
+          appId     = bson.getAs[BSONObjectID]      (`_id`)       map { i => i.stringify } getOrElse { "" },
+          runState  = bson.getAs[String]            (`runState`)  map { s => AppInstanceRunState.withName(s) } getOrElse { AppInstanceRunState.Stopped },
+          config    = bson.getAs[AppInstanceConfig] (`config`)   .get
+        )
+    }
 }

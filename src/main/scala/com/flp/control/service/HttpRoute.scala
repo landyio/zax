@@ -61,7 +61,7 @@ trait PrivateAppRoute extends PublicAppRoute {
       (path("create") & `json/post`) {
         entity(as[JsObject]) { json => {
           val config: AppInstanceConfig = json.convertTo[AppInstanceConfig]
-          val result: Future[JsObject] = store(AppInstanceConfigRecord(appId = appId, config = config), asking = true)
+          val result: Future[JsObject] = store(AppInstanceConfig.Record(appId = appId, config = config))
             .map { res => JsObject("id" -> JsString(appId), "result" -> JsBoolean(res.ok)) }
           complete(result)
         }} ~ die(`json body required`)
@@ -109,7 +109,7 @@ trait PrivateAppRoute extends PublicAppRoute {
 trait PublicAppRoute extends AppRoute {
 
   @inline
-  private[service] def predict(appId: String, identity: IdentityData.Type): Future[Variation.Type] = {
+  private[service] def predict(appId: String, identity: UserIdentity): Future[Variation] = {
     import AppInstance.Commands.{PredictRequest, PredictResponse, predictTimeout}
     askApp[PredictResponse](appId, PredictRequest(identity))(timeout = predictTimeout)
       .map { res => res.variation }
@@ -130,24 +130,33 @@ trait PublicAppRoute extends AppRoute {
       (path("start") & `json/post`) {
         entity(as[JsObject]) { json => clientIP { ip => {
           var ev: StartEvent = json.convertTo[StartEvent].copy(appId = appId)
-          ev = ev.copy(identity = ServerParams.get(ev.identity, ip.toOption))
+          ev = ev.copy(identity = ev.identity ++ ServerParams.get(ip.toOption))
+
           store(ev)
+
           complete("")
         }}} ~ die(`json body required`)
       } ~
       (path("predict") & `json/post`) {
         entity(as[JsObject]) { json => clientIP { ip => {
-          var ev: PredictEvent = json.convertTo[PredictEvent].copy(appId = appId)
-          ev = ev.copy(identity = ServerParams.get(ev.identity, ip.toOption))
-          val result: Future[Variation.Type] = predict(appId = ev.appId, identity = ev.identity)
-          result.onSuccess { case v => store( StartEvent(appId = appId, session = ev.session, timestamp = ev.timestamp, identity = ev.identity, variation = v) ) }
-          complete( result.map { v => v.toJson.asJsObject } )
+          var ev = json.convertTo[PredictEvent].copy(appId = appId)
+          ev = ev.copy(identity = ev.identity ++ ServerParams.get(ip.toOption))
+
+          val prediction = predict(appId = ev.appId, identity = ev.identity)
+
+          prediction.onSuccess {
+            case v => store(StartEvent(appId, ev.session, ev.timestamp, ev.identity, variation = v))
+          }
+
+          complete(prediction.map { v => v.toJson.asJsObject })
         }}} ~ die(`json body required`)
       } ~
       (path("finish") & `json/post`) {
         entity(as[JsObject]) { json => {
           val ev: FinishEvent = json.convertTo[FinishEvent].copy(appId = appId)
+
           store(ev)
+
           complete("")
         }} ~ die(`json body required`)
       }
@@ -166,20 +175,9 @@ trait AppRoute extends Service {
   private[service] val storageRef = Boot.actor(Storage.actorName)
 
   @inline
-  private[service] def store[E](element: E, asking: Boolean = false)(implicit persister: Storage.PersisterW[E], timeout: Timeout): Future[Storage.Commands.StoreResponse] = {
-    val message = Storage.Commands.Store(element, asking)( persister = persister )
-    if (asking) {
-      storageRef.ask(message).map { res => res.asInstanceOf[ Storage.Commands.StoreResponse ] }
-    } else {
-      storageRef ! message
-      null  // there is no future here :)
-            // OLD: return Promise.failed(new UnsupportedOperationException()).future
-    }
-  }
-
-  @inline
-  private[service] def store[E](element: E)(implicit persister: Storage.PersisterW[E]): Unit = {
-    storageRef ! Storage.Commands.Store(element)(persister = persister)
+  private[service] def store[E](element: E)(implicit persister: Storage.PersisterW[E], timeout: Timeout): Future[Storage.Commands.StoreResponse] = {
+    val message = Storage.Commands.Store(element)(persister = persister)
+    storageRef.ask(message).map { res => res.asInstanceOf[Storage.Commands.StoreResponse] }
   }
 
   @inline

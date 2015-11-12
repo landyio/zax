@@ -1,31 +1,25 @@
 package com.flp.control.model
 
-import com.flp.control.instance._
 
-object IdentityData {
-  type Type = Map[String, String]
-  def apply(params: Map[String, String]) = params
-  val empty: Type = apply(Map())
+trait Goal {
+  type Type = Boolean
 }
+
+case class UserIdentity(params: UserIdentity.Params) {
+  def ++(ps: UserIdentity.Params) = UserIdentity(params ++ ps)
+}
+
+object UserIdentity {
+  type Params       = Map[String, String]
+  type Descriptors  = Seq[String]
+
+  val empty = new UserIdentity(Map())
+}
+
+case class Variation(id: Variation.Id)
 
 object Variation {
-  type Type = Map[String, String]
-  def apply(params: Map[String, String]) = params
-  val empty: Type = apply(Map())
-}
+  type Id = String
 
-case class AppInstanceConfigRecord(
-  appId: String,
-  runState: AppInstanceRunState.Value = AppInstanceRunState.Stopped,
-  config: AppInstanceConfig = AppInstanceConfig.empty
-)
-
-object AppInstanceConfigRecord {
-  val `config` = "config"
-  val `runState` = "runState"
-  def notFound(appId: String) = AppInstanceConfigRecord(
-    appId = appId,
-    runState = AppInstanceRunState.NoData,
-    config = AppInstanceConfig.empty
-  )
+  val sentinel = new Variation("-1")
 }
