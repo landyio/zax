@@ -187,7 +187,34 @@ class AppInstanceActor(val appId: String) extends DefaultActor {
     }
   }
 
-  /** akka callback */
+  private def buildTrainingSample(maxSize: Int): Future[Seq[((UserIdentity, Variation), Goal#Type)]] = {
+    import com.flp.control.storage.Storage
+
+    val storage = this.storage()
+
+    def coalesce(es: Event*): ((UserIdentity, Variation), Goal#Type) = {
+      assert(es.size <= 2)
+
+      val s = es.filter { _.isInstanceOf[StartEvent] }
+                .collectFirst({ case x => x.asInstanceOf[StartEvent] })
+
+      val f = es.filter { _.isInstanceOf[FinishEvent] }
+                .collectFirst({ case x => x.asInstanceOf[FinishEvent] })
+
+      s.get match { case e => ((e.identity, Variation.sentinel), f.isDefined) }
+    }
+
+    for (
+      vs <- ask(storage, Storage.Commands.Load[StartEvent](Event.`appId` -> appId)(maxSize))
+              .mapTo[Storage.Commands.LoadResponse[Event]];
+
+      rs <- ask(storage, Storage.Commands.Load[FinishEvent](Event.`appId` -> appId)(maxSize))
+              .mapTo[Storage.Commands.LoadResponse[Event]]
+    ) yield (vs.seq ++ rs.seq).groupBy(e => e.session)
+                              .toSeq
+                              .map { case (s, es) => coalesce(es:_*) }
+  }
+
   override def receive: Receive = trace {
     case Commands.ApplyConfig(cfg)    => sender ! applyConfig(cfg)
     case Commands.GetStatusRequest()  => statusAsResponse() pipeTo sender()
