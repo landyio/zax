@@ -26,7 +26,7 @@ trait ActorTracing extends ActorLogging { this: Actor =>
         }
 
         override def apply(o: Any): Unit = {
-          log.info(s"[$prefix] '${self.path}' received: ${String.valueOf(o)}")
+          log.info(s"[$prefix] Received: ${String.valueOf(o)}")
           receive.apply(o)
         }
 
@@ -36,7 +36,7 @@ trait ActorTracing extends ActorLogging { this: Actor =>
 
 private object ActorTracing {
 
-  private val TRACE_ASCRIPTION: String = "TRC"
+  private val TRACE_ASCRIPTION: String = "TRACE"
 
   private val param   = "flp.akka.trace"
   private val config  = ConfigFactory.load()
