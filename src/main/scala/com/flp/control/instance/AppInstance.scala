@@ -1,22 +1,26 @@
 package com.flp.control.instance
 
 import akka.actor.ActorRef
-import akka.pattern.{ask, pipe}
+import akka.pattern.pipe
 import akka.util.Timeout
 import com.flp.control.akka.ExecutingActor
 import com.flp.control.boot.Boot
 import com.flp.control.instance.AppInstance.Commands.{ApplyConfig, GetStatusResponse}
 import com.flp.control.model._
+import com.flp.control.spark.SparkDriverActor
 import com.flp.control.storage.Storage
 import com.flp.control.storage.Storage.Commands.UpdateResponse
+import com.flp.control.util.boolean2Int
 
 import scala.concurrent.Future
 
 class AppInstanceActor(val appId: String) extends ExecutingActor {
   import AppInstance._
 
-  private var runState: AppInstanceRunState.Value = AppInstanceRunState.Loading
-  private var predictor: Option[Predictor] = None
+  private val sparkDriverRef = Boot.actor(classOf[SparkDriverActor].getName)
+
+  private var runState:   AppInstanceRunState.Value = AppInstanceRunState.Loading
+  private var predictor:  Option[Predictor] = None
 
   /**
     * Storage
@@ -32,6 +36,49 @@ class AppInstanceActor(val appId: String) extends ExecutingActor {
     predictor
       .map        { p => p.predictFor(identity) }
       .getOrElse  { Variation.sentinel }
+
+  private def shouldTrain(s: AppInstanceStatus): Boolean = s.eventsAllFinish >= 25
+
+  /**
+    * Retrains specified app
+    *
+    * @return
+    */
+  private def train(): Future[Option[Double]] = {
+
+    import SparkDriverActor.Commands.{TrainRegressorResponse, TrainRegressor}
+
+    val SAMPLE_MAX_SIZE = 1000
+
+    status().flatMap {
+      case s =>
+
+        // TODO(kudinkin): Gate the whole process through `applyConfig`
+
+        if (shouldTrain(s))
+          buildTrainingSample(SAMPLE_MAX_SIZE)
+            .flatMap  { sample => ask[TrainRegressorResponse](sparkDriverRef, TrainRegressor(explain(sample))) }
+            .map      {
+              case TrainRegressorResponse(model, error) =>
+                predictor = Some(buildPredictor(config(), model))
+                Some(error)
+            }
+        else
+          Future { None }
+    }
+  }
+
+  // TODO(kudinkin): Move
+
+  private def explain(sample: Seq[((UserIdentity, Variation), Goal#Type)]): Seq[(Seq[Double], Double)] = {
+    predictor match {
+      case Some(p) =>
+        sample.map {
+          case ((uid, v), goal) => (uid.toFeatures(p.userDataDescriptors) ++ Seq(v.id.toDouble), goal.toDouble)
+        }
+    }
+  }
+
 
   /**
     * Returns current app-instance status
@@ -80,30 +127,32 @@ class AppInstanceActor(val appId: String) extends ExecutingActor {
   private def statusAsResponse(): Future[GetStatusResponse] = status().map { s => Commands.GetStatusResponse(s) }
 
   /** @return config (variants) from {{{predictor}}} */
-  private def config(): AppInstanceConfig = AppInstanceConfig(
-    variations = predictor.map(_.variations.values.toSeq) getOrElse Seq()
-  )
+  private def config(): AppInstanceConfig =
+    predictor.collect { case p =>
+      AppInstanceConfig(p.variations, p.userDataDescriptors)
+    } getOrElse AppInstanceConfig.empty
 
-  /** @return {{{ Future { "load config from mongo, then apply it" } }}} */
+  /**
+    *
+    * @return {{{ Future { "load config from mongo, then apply it" } }}}
+    **/
   private def reloadConfig(): Future[ApplyConfig] = {
+    import Storage.Commands.{Load, LoadResponse}
 
-    val storage = this.storage()
-    val f =
-      (storage ? Storage.Commands.Load[AppInstanceConfig.Record](appId))
-        .map { r => r.asInstanceOf[Storage.Commands.LoadResponse[AppInstanceConfig.Record]] }
-        .map { r => r.seq.collectFirst({ case x => x }) }
-        .map { o => o.getOrElse(AppInstanceConfig.Record.notFound(appId)) }
-        .map { cfg => Commands.ApplyConfig(cfg) }
+    val f = for (
+      r <- ask[LoadResponse[AppInstanceConfig.Record]](this.storage(), Load[AppInstanceConfig.Record](appId))
+    ) yield Commands.ApplyConfig(
+      r.seq.collectFirst { case c => c } getOrElse AppInstanceConfig.Record.notFound(appId)
+    )
 
+    // TODO(kudinkin): Cure this
     f.flatMap { req => (self ? req).map { x => req } }
   }
 
   /** @return {{{ Future { "load config from mongo, apply it, then ask self for the status" } }}} */
   private def reloadConfigAndGetStatus(): Future[GetStatusResponse] = {
     reloadConfig().flatMap {
-      s => self.ask(Commands.GetStatusRequest()).map {
-        r => r.asInstanceOf[Commands.GetStatusResponse]
-      }
+      s => ask[Commands.GetStatusResponse](self, Commands.GetStatusRequest())
     }
   }
 
@@ -115,45 +164,55 @@ class AppInstanceActor(val appId: String) extends ExecutingActor {
     // TODO(kudinkin): Schema?
     //
 
-    val userdata: Seq[UserDataDescriptor] = Seq(
-      UserDataDescriptor("browser"),
-      UserDataDescriptor("os")
-    )
+//    val userdata: Seq[UserDataDescriptor] = Seq(
+//      UserDataDescriptor("browser"),
+//      UserDataDescriptor("os")
+//    )
 
     runState = cfg.runState // TODO: modify me
 
     predictor = runState match {
-      case AppInstanceRunState.Training   => Some(buildPredictor(cfg.config, userdata))
-      case AppInstanceRunState.Prediction => Some(buildPredictor(cfg.config, userdata))
+      case AppInstanceRunState.Training   => Some(buildPredictorStub(cfg.config))
+      case AppInstanceRunState.Prediction => Some(buildPredictorStub(cfg.config))
       case _ => None
     }
   }
 
   /**
-    * Predictor builder
+    * Predictor builder for particular app's config
     *
-    * @return new {{{AppPredictor}}} for specified {{{config}}} and {{{userDataDescriptors}}} */
-  private def buildPredictor(config: AppInstanceConfig, userDataDescriptors: Seq[UserDataDescriptor]) =
-    Predictor(
-      config.variations.zipWithIndex.map { case (el, idx) => idx -> el }.toMap,
-      userDataDescriptors
-    )
+    * @return built {{{AppPredictor}}} for specified app-{{{config}}} */
+  private def buildPredictorStub(config: AppInstanceConfig) =
+    Regressor(config.variations, config.userDataDescriptors)
 
-  /** check self to be killed, schedule next {{{selfKillCheck}}} call */
-  private def selfKillCheck(check: Boolean = true): Unit = {
+  private def buildPredictor(config: AppInstanceConfig, model: ClassificationModel) =
+    Classificator(config.variations, config.userDataDescriptors, model)
+
+  private def buildPredictor(config: AppInstanceConfig, model: RegressionModel) =
+    Regressor(config.variations, config.userDataDescriptors, model)
+
+
+  /**
+    * Check whether it's time to shutdown itself
+    **/
+  private def tryShutdown(check: Boolean = true): Unit = {
+    import scala.concurrent.duration._
+
     if (check) {
       val kill = runState match {
-        case AppInstanceRunState.NoData => true
-        case AppInstanceRunState.Stopped => true
+        case AppInstanceRunState.NoData   => true
+        case AppInstanceRunState.Stopped  => true
         case _ => false
       }
+
       if (kill) {
         import akka.actor.PoisonPill
+
         self ! PoisonPill
         return
       }
     }
-    import scala.concurrent.duration._
+
     context.system.scheduler.scheduleOnce(2.minutes) { self ! Commands.SelfKillCheck() }
   }
 
@@ -193,7 +252,7 @@ class AppInstanceActor(val appId: String) extends ExecutingActor {
     val storage = this.storage()
 
     def coalesce(es: Event*): ((UserIdentity, Variation), Goal#Type) = {
-      assert(es.size <= 2)
+      println("XOXO: ", es)
 
       val s = es.filter { _.isInstanceOf[StartEvent] }
                 .collectFirst({ case x => x.asInstanceOf[StartEvent] })
@@ -204,24 +263,42 @@ class AppInstanceActor(val appId: String) extends ExecutingActor {
       s.get match { case e => ((e.identity, Variation.sentinel), f.isDefined) }
     }
 
-    for (
+    // _DBG
+
+//    ask(storage, Storage.Commands.Load[StartEvent](Event.`appId` -> appId)(maxSize))
+//      .mapTo[Storage.Commands.LoadResponse[StartEvent]]
+//      .map { case s => println("XOXO: " + s); }
+//
+//    ask(storage, Storage.Commands.Load[FinishEvent](Event.`appId` -> appId)(maxSize))
+//      .mapTo[Storage.Commands.LoadResponse[FinishEvent]]
+//      .map { case s => println("XYXY: " + s); }
+
+    val f = for (
       vs <- ask(storage, Storage.Commands.Load[StartEvent](Event.`appId` -> appId)(maxSize))
-              .mapTo[Storage.Commands.LoadResponse[Event]];
+              .mapTo[Storage.Commands.LoadResponse[StartEvent]];
 
       rs <- ask(storage, Storage.Commands.Load[FinishEvent](Event.`appId` -> appId)(maxSize))
-              .mapTo[Storage.Commands.LoadResponse[Event]]
+              .mapTo[Storage.Commands.LoadResponse[FinishEvent]]
+
     ) yield (vs.seq ++ rs.seq).groupBy(e => e.session)
                               .toSeq
                               .map { case (s, es) => coalesce(es:_*) }
+
+//    f.onFailure { case t => t.printStackTrace }
+//    f.onComplete { case x => println(x.get) }
+
+    f.map { seq => println(seq); seq }
   }
 
   override def receive: Receive = trace {
     case Commands.ApplyConfig(cfg)    => sender ! applyConfig(cfg)
     case Commands.GetStatusRequest()  => statusAsResponse() pipeTo sender()
     case Commands.GetConfigRequest()  => sender ! Commands.GetConfigResponse(config())
-    case Commands.PredictRequest(uid) => sender ! Commands.PredictResponse(predict(uid))
 
-    case Commands.SelfKillCheck() => selfKillCheck()
+    case Commands.PredictRequest(uid) => sender ! Commands.PredictResponse(predict(uid))
+    case Commands.TrainRequest()      => train() pipeTo sender()
+
+    case Commands.SelfKillCheck() => tryShutdown()
     case Commands.StartRequest()  => changeRunStateToStart() pipeTo sender()
     case Commands.StopRequest()   => changeRunStateToStop() pipeTo sender()
 
@@ -230,7 +307,7 @@ class AppInstanceActor(val appId: String) extends ExecutingActor {
   /** akka prestart - reload config & start selfKill */
   override def preStart(): Unit = {
     reloadConfig()
-    selfKillCheck(false)
+    tryShutdown(false)
   }
 
   //override def postStop(): Unit = {}
@@ -256,16 +333,19 @@ object AppInstanceStatus {
   val empty: AppInstanceStatus = AppInstanceStatus()
 }
 
-case class AppInstanceConfig(variations: Seq[Variation])
+case class AppInstanceConfig(variations: Seq[Variation], userDataDescriptors: Seq[UserDataDescriptor])
 
 // TODO(kudinkin): Merge `AppInstanceConfig` & `AppInstanceConfig.Record`
 object AppInstanceConfig {
-  val empty = AppInstanceConfig(Seq())
+  val empty = AppInstanceConfig(Seq(), Seq())
+
+  val `variations`  = "variations"
+  val `descriptors` = "descriptors"
 
   case class Record(
-    appId: String,
+    appId:    String,
     runState: AppInstanceRunState.Value = AppInstanceRunState.Stopped,
-    config: AppInstanceConfig = AppInstanceConfig.empty
+    config:   AppInstanceConfig         = AppInstanceConfig.empty
   )
 
   object Record {
@@ -277,14 +357,11 @@ object AppInstanceConfig {
   }
 }
 
-trait AppInstanceMessage[Response] {
-}
+trait AppInstanceMessage[Response]
 
-trait AppInstanceAutoStartMessage[Response] extends AppInstanceMessage[Response] {
-}
+trait AppInstanceAutoStartMessage[Response] extends AppInstanceMessage[Response]
 
-trait AppInstanceChangeRunStateMessage extends AppInstanceAutoStartMessage[GetStatusResponse] {
-}
+trait AppInstanceChangeRunStateMessage extends AppInstanceAutoStartMessage[GetStatusResponse]
 
 object AppInstance {
 
@@ -321,6 +398,11 @@ object AppInstance {
 
     case class PredictRequest(identity: UserIdentity) extends AppInstanceAutoStartMessage[PredictResponse]
     case class PredictResponse(variation: Variation)
+
+    val trainTimeout: Timeout = 30.seconds
+
+    case class TrainRequest() extends AppInstanceAutoStartMessage[TrainResponse]
+    case class TrainResponse(error: Double)
 
   }
 }

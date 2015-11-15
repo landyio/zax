@@ -1,12 +1,12 @@
 package com.flp.control.storage
 
 import akka.pattern.pipe
-import com.flp.control.akka.DefaultActor
+import com.flp.control.akka.ExecutingActor
 import com.flp.control.instance._
 import com.flp.control.model._
 import com.typesafe.config.{Config, ConfigFactory}
 
-class StorageActor extends DefaultActor {
+class StorageActor extends ExecutingActor {
 
   import reactivemongo.api._
   import reactivemongo.api.collections.bson._
@@ -246,19 +246,37 @@ object Storage extends reactivemongo.bson.DefaultBSONHandlers {
         Variation(bson.value)
     }
 
+  implicit val userDataDescriptorBSON =
+    new BSONReader[BSONString, UserDataDescriptor] with BSONWriter[UserDataDescriptor, BSONString] {
+
+      override def write(v: UserDataDescriptor): BSONString =
+        BSON.write(v.name)
+
+      override def read(bson: BSONString): UserDataDescriptor =
+        UserDataDescriptor(bson.value)
+    }
+
   // TODO(kudinkin): Merge
 
   implicit val appInstanceConfigBSON =
     new BSONDocumentReader[AppInstanceConfig] with BSONDocumentWriter[AppInstanceConfig] {
+      import AppInstanceConfig._
 
-    override def read(bson: BSONDocument): AppInstanceConfig = {
-      val conf = BSON.readDocument[Map[String, Seq[Variation]]](bson)
-      AppInstanceConfig(conf("variations"))
+      override def write(t: AppInstanceConfig): BSONDocument = {
+        BSONDocument(
+          `variations`   -> t.variations,
+          `descriptors`  -> t.userDataDescriptors
+        )
+      }
+
+      override def read(bson: BSONDocument): AppInstanceConfig = {
+        { for (
+            vs <- bson.getAs[Seq[Variation]]          (`variations`);
+            ds <- bson.getAs[Seq[UserDataDescriptor]] (`descriptors`)
+          ) yield AppInstanceConfig(variations = vs, userDataDescriptors = ds)
+        } getOrElse AppInstanceConfig.empty
+      }
     }
-
-    override def write(t: AppInstanceConfig): BSONDocument =
-      BSON.write(Map("variations" -> t.variations))
-  }
 
   implicit val appInstanceConfigRecordBSON =
     new Persister[AppInstanceConfig.Record] {

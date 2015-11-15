@@ -11,8 +11,8 @@ trait JsonSerialization extends DefaultJsonProtocol with SprayJsonSupport {
     fromField[Option[T]](value, fieldName)(reader = reader).getOrElse(default)
   }
 
-  private def field[T](value: JsValue, fieldName: String)(implicit reader: JsonReader[Option[T]]): T = {
-    fromField[Option[T]](value, fieldName)(reader = reader).get
+  private def field[T](value: JsValue, fieldName: String)(implicit reader: JsonReader[Option[T]]): Option[T] = {
+    fromField[Option[T]](value, fieldName)(reader = reader)
   }
 
   /**
@@ -36,11 +36,38 @@ trait JsonSerialization extends DefaultJsonProtocol with SprayJsonSupport {
   }
 
   /**
+    * `UserDataDescriptor`
+    */
+  private[service] implicit object UserDataDescriptorJsonFormat extends RootJsonFormat[UserDataDescriptor] {
+
+    override def write(o: UserDataDescriptor): JsValue = o.name.toJson
+
+    override def read(value: JsValue): UserDataDescriptor = UserDataDescriptor(value.convertTo[String])
+  }
+
+  /**
     * `AppInstanceConfig`
     */
   private[service] implicit object AppInstanceConfigJsonFormat extends RootJsonFormat[AppInstanceConfig] {
-    def write(config: AppInstanceConfig): JsValue = config.variations.toJson
-    def read(value: JsValue): AppInstanceConfig = AppInstanceConfig(value.convertTo[Seq[Variation]])
+
+    def write(config: AppInstanceConfig): JsValue = {
+      import AppInstanceConfig._
+
+      JsObject(
+        `variations`  -> config.variations.toJson,
+        `descriptors` -> config.userDataDescriptors.toJson
+      )
+    }
+
+    def read(value: JsValue): AppInstanceConfig = {
+      import AppInstanceConfig._
+
+      { for (
+          vs <- field[Seq[Variation]]           (value, `variations`);
+          ds <- field[Seq[UserDataDescriptor]]  (value, `descriptors`)
+        ) yield AppInstanceConfig(vs, ds)
+      } getOrElse AppInstanceConfig.empty
+    }
   }
 
   /**
@@ -97,18 +124,20 @@ trait JsonSerialization extends DefaultJsonProtocol with SprayJsonSupport {
   private[service] implicit object PredictEventJsonFormat extends RootJsonFormat[PredictEvent] {
     import Event._
 
-    def write(event: PredictEvent): JsObject = JsObject(
-      `type` -> JsString("start"),
-      `session` -> JsString(event.session),
-      `timestamp` -> JsNumber(event.timestamp),
-      `identity` -> event.identity.toJson
-    )
+    def write(event: PredictEvent): JsObject =
+      JsObject(
+        `type`      -> JsString("start"),
+        `session`   -> JsString(event.session),
+        `timestamp` -> JsNumber(event.timestamp),
+        `identity`  -> event.identity.toJson
+      )
 
-    def read(value: JsValue): PredictEvent = PredictEvent(
-      session   = field[String]       (value, `session`,    ""),
-      timestamp = field[Long]         (value, `timestamp`,  0l),
-      identity  = field[UserIdentity] (value, `identity`,   UserIdentity.empty )
-    )
+    def read(value: JsValue): PredictEvent =
+      PredictEvent(
+        session   = field[String]       (value, `session`,    ""),
+        timestamp = field[Long]         (value, `timestamp`,  0l),
+        identity  = field[UserIdentity] (value, `identity`,   UserIdentity.empty )
+      )
   }
 
   /**
@@ -124,7 +153,7 @@ trait JsonSerialization extends DefaultJsonProtocol with SprayJsonSupport {
     )
 
     def read(value: JsValue): FinishEvent = FinishEvent(
-      session = field[String](value, `session`, ""),
+      session   = field[String](value, `session`, ""),
       timestamp = field[Long](value, `timestamp`, 0l)
     )
   }

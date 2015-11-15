@@ -1,9 +1,10 @@
 package com.flp.control.spark
 
 import akka.pattern.pipe
-import com.flp.control.akka.DefaultActor
-import com.flp.control.instance.{SparkRegressionModel, RegressionModel}
+import com.flp.control.akka.ExecutingActor
+import com.flp.control.instance.{SparkRegressionModel, RegressionModel, ClassificationModel, SparkClassificationModel}
 import org.apache.spark.SparkContext
+import org.apache.spark.mllib.linalg.DenseVector
 import org.apache.spark.mllib.regression.LabeledPoint
 import org.apache.spark.mllib.tree.DecisionTree
 import org.apache.spark.mllib.tree.model.DecisionTreeModel
@@ -11,11 +12,17 @@ import org.apache.spark.rdd.RDD
 
 import scala.concurrent.Future
 
-class SparkDriverActor(private val sc: SparkContext) extends DefaultActor {
+class SparkDriverActor(private val sc: SparkContext) extends ExecutingActor {
 
-  import SparkDriver._
+  import SparkDriverActor._
 
-  def convert(sample: Seq[Any]): RDD[LabeledPoint] = null
+  def convert(sample: Seq[(Seq[Double], Double)]): RDD[LabeledPoint] = {
+    sc.parallelize(
+      sample.map {
+        case (fs, l) => new LabeledPoint(label = l, features = new DenseVector(fs.toArray))
+      }
+    )
+  }
 
   def evaluate(model: DecisionTreeModel, testSet: RDD[LabeledPoint]): Double =
     testSet .map    { p => (p.label, model.predict(p.features)) }
@@ -30,7 +37,7 @@ class SparkDriverActor(private val sc: SparkContext) extends DefaultActor {
       case Array(a: T, b: T) => (a, b)
     }
 
-  private def train(sample: Seq[Any]): Future[(RegressionModel, Double)] = {
+  private def trainClassifier(sample: Seq[(Seq[Double], Double)]): Future[(ClassificationModel, Double)] = {
 
     // TODO(kudinkin): Extract
 
@@ -47,26 +54,60 @@ class SparkDriverActor(private val sc: SparkContext) extends DefaultActor {
 
     val error = evaluate(model, test)
 
-    Future { (new SparkRegressionModel(model), error) }
+    Future { (new SparkClassificationModel(model), error) }
   }
 
 
+  def trainRegressor(sample: Seq[(Seq[Double], Double)]): Future[(RegressionModel, Double)] = {
+
+    // TODO(kudinkin): Extract
+
+    log.info(s"Training regressor with sample total of ${sample.size} elements")
+
+    val maxBins     = 32
+    val maxDepth    = 10
+    val impurity    = "gini"
+
+    val catFeaturesInfo = Map[Int, Int]()
+
+    val (train, test) = split(convert(sample))
+
+    val model = DecisionTree.trainRegressor(train, catFeaturesInfo, impurity, maxDepth, maxBins)
+
+    val error = evaluate(model, test)
+
+    log.info( s"Finished training regressor (${model.getClass.getName});\n" +
+              s"Error: ${error}\n")
+
+    Future { (new SparkRegressionModel(model), error) }
+  }
+
   override def receive: Receive = trace {
-    case Commands.Train(sample) => train(sample) pipeTo sender()
+    case Commands.TrainClassifier(sample) => trainClassifier(sample) pipeTo sender()
+    case Commands.TrainRegressor(sample)  => trainRegressor(sample) pipeTo sender()
   }
 
 }
 
-object SparkDriver {
+object SparkDriverActor {
 
   object Commands {
 
     /**
-      * Request for training model on particular sample
+      * Request for training classifier on particular sample
       *
-      * @param sample   sample to train model on
+      * @param sample   sample to train classifier on
       */
-    case class Train(sample: Seq[Any])
+    case class TrainClassifier(sample: Seq[(Seq[Double], Double)])
+    case class TrainClassifierResponse(model: ClassificationModel, error: Double)
+
+    /**
+      * Request for training regressor on particular sample
+      *
+      * @param sample   sample to train regressor on
+      */
+    case class TrainRegressor(sample: Seq[(Seq[Double], Double)])
+    case class TrainRegressorResponse(model: RegressionModel, error: Double)
 
   }
 

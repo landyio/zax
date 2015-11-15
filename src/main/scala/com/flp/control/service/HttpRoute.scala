@@ -1,9 +1,8 @@
 package com.flp.control.service
 
 import akka.actor._
-import akka.pattern.ask
 import akka.util.Timeout
-import com.flp.control.akka.DefaultTimeout
+import com.flp.control.akka.{AskSupport, DefaultTimeout}
 import com.flp.control.boot.Boot
 import com.flp.control.instance._
 import com.flp.control.model._
@@ -111,8 +110,17 @@ trait PublicAppRoute extends AppRoute {
   @inline
   private[service] def predict(appId: String, identity: UserIdentity): Future[Variation] = {
     import AppInstance.Commands.{PredictRequest, PredictResponse, predictTimeout}
+
     askApp[PredictResponse](appId, PredictRequest(identity))(timeout = predictTimeout)
       .map { res => res.variation }
+  }
+
+  @inline
+  private[service] def retrain(appId: String): Future[Boolean] = {
+    import AppInstance.Commands.{TrainRequest, TrainResponse, trainTimeout}
+
+    askApp[TrainResponse](appId, TrainRequest())(timeout = trainTimeout)
+      .collect { case _ => true }
   }
 
   @inline
@@ -124,15 +132,14 @@ trait PublicAppRoute extends AppRoute {
 
   @inline
   private[service] def event(appId: String): Route = pathPrefix("event") {
-    import Storage._
     import com.flp.control.model._
     `options/origin` ~
       (path("start") & `json/post`) {
         entity(as[JsObject]) { json => clientIP { ip => {
-          var ev: StartEvent = json.convertTo[StartEvent].copy(appId = appId)
-          ev = ev.copy(identity = ev.identity ++ ServerParams.get(ip.toOption))
+          val ev: StartEvent = json.convertTo[StartEvent]
 
-          store(ev)
+          store(ev.copy(appId = appId, identity = ev.identity ++ ServerParams.get(ip.toOption)))
+          retrain(appId)
 
           complete("")
         }}} ~ die(`json body required`)
@@ -148,14 +155,18 @@ trait PublicAppRoute extends AppRoute {
             case v => store(StartEvent(appId, ev.session, ev.timestamp, ev.identity, variation = v))
           }
 
-          complete(prediction.map { v => v.toJson.asJsObject })
+          complete(
+            prediction.map { v =>
+              JsObject("variation" -> v.toJson)
+            }
+          )
         }}} ~ die(`json body required`)
       } ~
       (path("finish") & `json/post`) {
         entity(as[JsObject]) { json => {
-          val ev: FinishEvent = json.convertTo[FinishEvent].copy(appId = appId)
+          val ev: FinishEvent = json.convertTo[FinishEvent]
 
-          store(ev)
+          store(ev.copy(appId = appId))
 
           complete("")
         }} ~ die(`json body required`)
@@ -171,18 +182,17 @@ trait PublicAppRoute extends AppRoute {
 
 trait AppRoute extends Service {
 
-  private[service] val appsRef    = Boot.actor(AppInstances.actorName)
-  private[service] val storageRef = Boot.actor(Storage.actorName)
+  private val appsRef    = Boot.actor(AppInstances.actorName)
+  private val storageRef = Boot.actor(Storage.actorName)
 
   @inline
   private[service] def store[E](element: E)(implicit persister: Storage.PersisterW[E], timeout: Timeout): Future[Storage.Commands.StoreResponse] = {
     val message = Storage.Commands.Store(element)(persister = persister)
-    storageRef.ask(message).map { res => res.asInstanceOf[Storage.Commands.StoreResponse] }
+    ask[Storage.Commands.StoreResponse](storageRef, message)
   }
 
   @inline
-  private[service] def askApps[T](message: Any)(implicit timeout: Timeout): Future[T] =
-    appsRef.ask(message).map { res => res.asInstanceOf[T] }
+  private[service] def askApps[T](message: Any)(implicit timeout: Timeout): Future[T] = ask[T](appsRef, message)
 
   @inline
   private[service] def askApp[T](appId: String, message: AppInstanceMessage[T])(implicit timeout: Timeout): Future[T] =
@@ -199,7 +209,9 @@ trait AppRoute extends Service {
 }
 
 
-trait Service extends HttpService with JsonSerialization with DefaultTimeout {
+trait Service extends HttpService with JsonSerialization
+                                  with AskSupport
+                                  with DefaultTimeout {
 
   implicit val context: ActorContext
   implicit val executionContext: ExecutionContext = context.dispatcher
@@ -256,9 +268,4 @@ trait Service extends HttpService with JsonSerialization with DefaultTimeout {
     }
   }
 
-}
-
-object HttpRoute {
-  val privActorName: String = "http-private"
-  val publActorName: String = "http-public"
 }
