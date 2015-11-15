@@ -6,7 +6,9 @@ import akka.actor._
 import akka.io.IO
 import akka.pattern.ask
 import com.flp.control.akka.{ActorTracing, DefaultTimeout}
+import com.flp.control.spark.SparkDriverActor
 import com.typesafe.config.ConfigFactory
+import org.apache.spark.{SparkContext, SparkConf}
 import spray.can.Http
 import spray.can.server.ServerSettings
 
@@ -85,7 +87,7 @@ class BootActor extends Actor with ActorTracing with DefaultTimeout {
   }
 
   @inline
-  private def startHttp(): Unit = {
+  private def startHttp() {
 
     val conf = ConfigFactory.load()
 
@@ -102,12 +104,12 @@ class BootActor extends Actor with ActorTracing with DefaultTimeout {
 
     val privateRef: ActorRef = context.actorOf(
       props = Props[PrivateHttpRouteActor],
-      name = HttpRoute.privActorName
+      name  = classOf[PrivateHttpRouteActor].getName
     )
 
     val publicRef: ActorRef = context.actorOf(
       props = Props[PublicHttpRouteActor],
-      name = HttpRoute.publActorName
+      name  = classOf[PublicHttpRouteActor].getName
     )
 
     implicit val system: ActorSystem = context.system
@@ -136,6 +138,20 @@ class BootActor extends Actor with ActorTracing with DefaultTimeout {
     IO(Http) ? bind(publicHost, publicPort, publicRef, if (publicHttps) settingsHttps else settingsHttp, publicHttps)
   }
 
+  def startSpark() {
+
+    val conf = ConfigFactory.load()
+
+    val sparkConf = new SparkConf() .setMaster    (conf.getString("spark.master"))
+                                    .setAppName   (conf.getString("flp.name"))
+
+    val sparkCtx  = new SparkContext(sparkConf)
+
+    context.actorOf(
+      props = Props(classOf[SparkDriverActor], sparkCtx),
+      name  = classOf[SparkDriverActor].getName
+    )
+  }
 
   def bind(host: String, port: Int, listener: ActorRef, settings: ServerSettings, useHttps: Boolean) =
     useHttps match {
@@ -152,6 +168,7 @@ class BootActor extends Actor with ActorTracing with DefaultTimeout {
       startStorage()
       startAppInstances()
       startHttp()
+      startSpark()
       sender ! true
     }
     case Commands.Shutdown() => {

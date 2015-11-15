@@ -82,8 +82,8 @@ libraryDependencies ++= {
 // mongo
 libraryDependencies ++= {
   Seq(
-    "com.typesafe.play"  %%  "play-iteratees"  % "2.4.2",
-    "org.reactivemongo"  %% "reactivemongo"    % "0.11.3"
+    "com.typesafe.play"  %% "play-iteratees" % "2.4.2",
+    "org.reactivemongo"  %% "reactivemongo"  % "0.11.3"
   )
 }
 
@@ -105,7 +105,7 @@ libraryDependencies ++= {
 
 // spark
 libraryDependencies ++= {
-  val sparkVersion = "1.4.1"
+  val sparkVersion = "1.5.1"
   Seq(
     "org.apache.spark" %% "spark-core" % sparkVersion withSources(),
     "org.apache.spark" %% "spark-mllib" % sparkVersion withSources()
@@ -118,17 +118,36 @@ libraryDependencies ++= {
 lazy val runMongo = taskKey[Unit]("Starts the MongoDB instance locally")
 
 runMongo := {
-  println("MongoD started")
+  println("Starting MongoD")
   "mongod --fork --config /usr/local/etc/mongod.conf"!
 }
 
 lazy val stopMongo = taskKey[Unit]("Stops the MongoDB local instance")
 
 stopMongo := {
-  println("MongoD stopped")
+  println("Stopping MongoD")
   "mongod --shutdown"!
 }
 
 lazy val runWithMongo = taskKey[Unit]("Runs the app starting MongoDB-daemon locally!")
 
 runWithMongo := Def.sequential(runMongo, (run in Compile).toTask(""), stopMongo).value
+
+
+lazy val runSpark = taskKey[Unit]("Starts the local instance of Spark's master")
+
+runSpark := {
+  println("Starting Spark Master")
+  "$SPARK_HOME/sbin/start-master.sh -p 7077 --webui-port 8082"!
+}
+
+lazy val stopSpark = taskKey[Unit]("Stops the local instance of Spark's master")
+
+stopSpark := {
+  println("Stopping Spark Master")
+  "$SPARK_HOME/sbin/stop-master.sh"!
+}
+
+lazy val runWithSpark = taskKey[Unit]("Runs the app starting Spark's Master instance locally!")
+
+runWithSpark := Def.sequential(runSpark, (run in Compile).toTask(""), stopSpark).value
