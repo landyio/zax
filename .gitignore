@@ -1,0 +1,4 @@
+.history
+.dump/
+target/
+node_modules/
