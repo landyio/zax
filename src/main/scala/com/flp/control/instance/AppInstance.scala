@@ -3,7 +3,7 @@ package com.flp.control.instance
 import akka.actor.ActorRef
 import akka.pattern.{ask, pipe}
 import akka.util.Timeout
-import com.flp.control.akka.DefaultActor
+import com.flp.control.akka.ExecutingActor
 import com.flp.control.boot.Boot
 import com.flp.control.instance.AppInstance.Commands.{ApplyConfig, GetStatusResponse}
 import com.flp.control.model._
@@ -12,7 +12,7 @@ import com.flp.control.storage.Storage.Commands.UpdateResponse
 
 import scala.concurrent.Future
 
-class AppInstanceActor(val appId: String) extends DefaultActor {
+class AppInstanceActor(val appId: String) extends ExecutingActor {
   import AppInstance._
 
   private var runState: AppInstanceRunState.Value = AppInstanceRunState.Loading
