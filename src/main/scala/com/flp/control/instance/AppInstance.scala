@@ -168,50 +168,19 @@ class AppInstanceActor(val appId: String) extends ExecutingActor {
   }
 
   /**
-    * Check whether it's time to shutdown itself
+    * Check whether it's a proper time to shutdown
     **/
-  private def tryShutdown(check: Boolean = true): Unit = {
-    import scala.concurrent.duration._
-
-    if (check) {
-      val kill = runState match {
-        case AppInstanceRunState.NoData   => true
-        case AppInstanceRunState.Stopped  => true
-        case _ => false
-      }
-
-      if (kill) {
-        import akka.actor.PoisonPill
-
-        self ! PoisonPill
-        return
-      }
+  private def commitSuicide(check: Boolean = true) {
+    runState is State.Suspended then {
+      takePoison()
+      return
     }
-
-    context.system.scheduler.scheduleOnce(2.minutes) { self ! Commands.SelfKillCheck() }
   }
 
-  /** @return {{{ Future { "update `runState` to specified `targetRunState`" } }}}*/
-  private def doUpdateRunStat(targetRunState: AppInstanceRunState.Value): Future[Boolean] = {
-    import com.flp.control.storage.Storage
+  private def takePoison() {
+    import akka.actor.PoisonPill
 
-    val request: Storage.Commands.UpdateRequest[AppInstanceConfig.Record] = Storage.Commands.Update[AppInstanceConfig.Record](appId) {
-      AppInstanceConfig.Record.`runState` -> targetRunState.toString
-    }
-
-    val storage = this.storage()
-    val future: Future[Boolean] = (storage ? request).map {
-      x => x.asInstanceOf[UpdateResponse].ok
-    }
-
-    future
-  }
-
-  /** @return {{{ Future{ "set `runState` = AppInstanceRunState.Training" } }}}*/
-  private def changeRunStateToStart(): Future[GetStatusResponse] = {
-    doUpdateRunStat(AppInstanceRunState.Training).flatMap {
-      x => reloadConfigAndGetStatus()
-    }
+    self ! PoisonPill
   }
 
   /**
