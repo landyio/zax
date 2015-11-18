@@ -81,116 +81,91 @@ class AppInstanceActor(val appId: String) extends ExecutingActor {
 
 
   /**
-    * Returns current app-instance status
+    * Returns current app-instance getStatus
     **/
-  private def status(): Future[AppInstanceStatus] = {
+  private def getStatus: Future[AppInstanceStatus] = {
 
     import com.flp.control.storage.Storage
 
     val state = this.runState
 
+    //
     // TODO(kudinkin): Remove this
+    //
     val fake: Boolean = state match {
-      case AppInstanceRunState.NoData => true
+      case State.NoData => true
       case _ => false
     }
     if (fake) {
-      // its fake status, no db lookup required
-      return Future { AppInstanceStatus(state) }
+      // its fake getStatus, no db lookup required
+      return Future {
+        AppInstanceStatus(state)
+      }
     }
 
     val storage = this.storage()
 
-    // construct real status
     for {
 
-      // all started events
       eventsAllStart <-
-        ask(storage, Storage.Commands.Count[StartEvent](
-          Event.`appId` -> appId,
-          Event.`type`  -> Event.`type:Start`
-        )).mapTo[Storage.Commands.CountResponse]
-          .map(_.count)
+      ask(storage, Storage.Commands.Count[StartEvent](
+        Event.`appId` -> appId,
+        Event.`type` -> Event.`type:Start`
+      )).mapTo[Storage.Commands.CountResponse]
+        .map(_.count)
 
-      // all finished events
       eventsAllFinish <-
-        ask(storage, Storage.Commands.Count[StartEvent](
-          Event.`appId` -> appId,
-          Event.`type`  -> Event.`type:Finish`
-        )).mapTo[Storage.Commands.CountResponse]
-          .map(x => x.count)
+      ask(storage, Storage.Commands.Count[StartEvent](
+        Event.`appId` -> appId,
+        Event.`type` -> Event.`type:Finish`
+      )).mapTo[Storage.Commands.CountResponse]
+        .map(x => x.count)
 
     } yield AppInstanceStatus(state, eventsAllStart, eventsAllFinish)
   }
 
-  /** @return status wrapped into {{{GetStatusResponse}}} */
-  private def statusAsResponse(): Future[GetStatusResponse] = status().map { s => Commands.GetStatusResponse(s) }
 
-  /** @return config (variants) from {{{predictor}}} */
-  private def config(): AppInstanceConfig =
-    predictor.collect { case p =>
-      AppInstanceConfig(p.variations, p.userDataDescriptors)
-    } getOrElse AppInstanceConfig.empty
+  // TODO(kudinkin): move config out of predictor
+  private def getConfig: AppInstanceConfig =
+    predictor.collect { case p => p.config } get // getOrElse AppInstanceConfig.sentinel
 
-  /**
-    *
-    * @return {{{ Future { "load config from mongo, then apply it" } }}}
-    **/
-  private def reloadConfig(): Future[ApplyConfig] = {
+  private def reloadConfig(): Future[AppInstanceConfig.Record] = {
     import Storage.Commands.{Load, LoadResponse}
 
-    val f = for (
+    val f = { for (
       r <- ask[LoadResponse[AppInstanceConfig.Record]](this.storage(), Load[AppInstanceConfig.Record](appId))
-    ) yield Commands.ApplyConfig(
-      r.seq.collectFirst { case c => c } getOrElse AppInstanceConfig.Record.notFound(appId)
-    )
+    ) yield r.seq.collectFirst(Identity.partial()) } map {
+      case Some(c)  => c
+      case None     => throw new Exception(s"Failed to retrieve app's {#${appId}} configuration!")
+    }
 
-    // TODO(kudinkin): Cure this
-    f.flatMap { req => (self ? req).map { x => req } }
-  }
-
-  /** @return {{{ Future { "load config from mongo, apply it, then ask self for the status" } }}} */
-  private def reloadConfigAndGetStatus(): Future[GetStatusResponse] = {
-    reloadConfig().flatMap {
-      s => ask[Commands.GetStatusResponse](self, Commands.GetStatusRequest())
+    f.andThen {
+      case Success(cfg) => applyConfig(cfg)
+      case Failure(t)   =>
+        log.error(t, s"Failed to retrieve app's {#{}} configuration!", appId)
     }
   }
 
-  private def applyConfig(cfg: AppInstanceConfig.Record): Unit = {
-    // TODO: read from cfg / cfg.config
-    // TODO: check for model, modify cfg.runState
+  private def applyConfig(r: AppInstanceConfig.Record): Unit = {
+    updateState(r.runState) match {
+      case State.Predicting =>
+        predictor = Some(Predictor(r.config))
 
-    //
-    // TODO(kudinkin): Schema?
-    //
+      case State.NoData =>
+        predictor = Some(Predictor.random(r.config))
 
-//    val userdata: Seq[UserDataDescriptor] = Seq(
-//      UserDataDescriptor("browser"),
-//      UserDataDescriptor("os")
-//    )
+      case State.Suspended =>
+        predictor = None
 
-    runState = cfg.runState // TODO: modify me
-
-    predictor = runState match {
-      case AppInstanceRunState.Training   => Some(buildPredictorStub(cfg.config))
-      case AppInstanceRunState.Prediction => Some(buildPredictorStub(cfg.config))
-      case _ => None
+      case _ =>
+        throw new UnsupportedOperationException
     }
   }
 
-  /**
-    * Predictor builder for particular app's config
-    *
-    * @return built {{{AppPredictor}}} for specified app-{{{config}}} */
-  private def buildPredictorStub(config: AppInstanceConfig) =
-    Regressor(config.variations, config.userDataDescriptors)
-
-  private def buildPredictor(config: AppInstanceConfig, model: ClassificationModel) =
-    Classificator(config.variations, config.userDataDescriptors, model)
-
-  private def buildPredictor(config: AppInstanceConfig, model: RegressionModel) =
-    Regressor(config.variations, config.userDataDescriptors, model)
-
+  private def updateState(state: State.Value): State.Value = {
+    runState = state
+    runState
+  }
 
   /**
     * Check whether it's time to shutdown itself
@@ -239,11 +214,21 @@ class AppInstanceActor(val appId: String) extends ExecutingActor {
     }
   }
 
-  /** @return {{{ Future{ "set `runState` = AppInstanceRunState.Stopped" } }}}*/
-  private def changeRunStateToStop(): Future[GetStatusResponse] = {
-    doUpdateRunStat(AppInstanceRunState.Stopped).flatMap {
-      x => reloadConfigAndGetStatus()
-    }
+  /**
+    * Switches current-state of the app-instance
+    *
+    * @param state target state being switched to
+    */
+  private def switchState(state: State.Value): Future[AppInstanceConfig.Record] = {
+    ask[UpdateResponse](this.storage(), Update[AppInstanceConfig.Record](appId) {
+      AppInstanceConfig.Record.`runState` -> state.toString
+    }).map      { r => r.ok }
+      .andThen  {
+        case Failure(t) => log.error(t, s"Failed to switch state to '${state}'!")
+      }
+      .flatMap  {
+        case _ => reloadConfig()
+      }
   }
 
   private def buildTrainingSample(maxSize: Int): Future[Seq[((UserIdentity, Variation), Goal#Type)]] = {
