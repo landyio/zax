@@ -219,20 +219,10 @@ class AppInstanceActor(val appId: String) extends ExecutingActor {
       val f = es.filter { _.isInstanceOf[FinishEvent] }
                 .collectFirst({ case x => x.asInstanceOf[FinishEvent] })
 
-      s.get match { case e => ((e.identity, Variation.sentinel), f.isDefined) }
+      s match { case Some(e) => ((e.identity, Variation.sentinel), f.isDefined) }
     }
 
-    // _DBG
-
-//    ask(storage, Storage.Commands.Load[StartEvent](Event.`appId` -> appId)(maxSize))
-//      .mapTo[Storage.Commands.LoadResponse[StartEvent]]
-//      .map { case s => println("XOXO: " + s); }
-//
-//    ask(storage, Storage.Commands.Load[FinishEvent](Event.`appId` -> appId)(maxSize))
-//      .mapTo[Storage.Commands.LoadResponse[FinishEvent]]
-//      .map { case s => println("XYXY: " + s); }
-
-    val f = for (
+    { for (
       vs <- ask(storage, Storage.Commands.Load[StartEvent](Event.`appId` -> appId)(maxSize))
               .mapTo[Storage.Commands.LoadResponse[StartEvent]];
 
@@ -242,12 +232,13 @@ class AppInstanceActor(val appId: String) extends ExecutingActor {
     ) yield (vs.seq ++ rs.seq).groupBy(e => e.session)
                               .toSeq
                               .map { case (s, es) => coalesce(es:_*) }
-
-//    f.onFailure { case t => t.printStackTrace }
-//    f.onComplete { case x => println(x.get) }
-
-    f.map { seq => println(seq); seq }
+    } andThen {
+      case Failure(t) =>
+        log.error(t, "Failed to compose training sample (#{{}})!", appId)
+    }
   }
+
+
 
   override def receive: Receive = trace {
 
