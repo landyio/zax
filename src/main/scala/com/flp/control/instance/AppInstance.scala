@@ -51,25 +51,44 @@ class AppInstanceActor(val appId: String) extends ExecutingActor {
     */
   private def train(): Future[Option[Double]] = {
 
-    import SparkDriverActor.Commands.{TrainRegressorResponse, TrainRegressor}
+    import SparkDriverActor.Commands.{TrainRegressor, TrainRegressorResponse}
 
     val SAMPLE_MAX_SIZE = 1000
 
-    status().flatMap {
+    getStatus.flatMap {
       case s =>
 
-        // TODO(kudinkin): Gate the whole process through `applyConfig`
+        if (shouldTrain(s)) {
 
-        if (shouldTrain(s))
           buildTrainingSample(SAMPLE_MAX_SIZE)
-            .flatMap  { sample => ask[TrainRegressorResponse](sparkDriverRef, TrainRegressor(explain(sample))) }
-            .map      {
+            .flatMap { sample => ask[TrainRegressorResponse](sparkDriverRef, TrainRegressor(explain(sample))) }
+            .flatMap {
               case TrainRegressorResponse(model, error) =>
-                predictor = Some(buildPredictor(config(), model))
-                Some(error)
+
+                import Storage.{appInstanceConfigBSON, appInstanceConfigRecordBSON}
+
+                ask[UpdateResponse](this.storage(), Update[AppInstanceConfig.Record](appId) {
+                  AppInstanceConfig.Record.`config` ->
+                    getConfig.copy(model =
+                      Some(
+                        Right[AppInstanceConfig.ClassificationModel, AppInstanceConfig.RegressionModel](
+                          model.asInstanceOf[AppInstanceConfig.RegressionModel]
+                        )
+                      )
+                    )
+                })
+
+                switchState(State.Predicting).map(
+                  _ => Some(error)
+                )
             }
-        else
+            .andThen {
+              case Failure(t) =>
+                log.error(t, "Training of predictor for #{{}} failed!", appId)
+            }
+        } else {
           Future { None }
+        }
     }
   }
 
@@ -308,14 +327,33 @@ object AppInstanceStatus {
   val empty: AppInstanceStatus = AppInstanceStatus()
 }
 
-case class AppInstanceConfig(variations: Seq[Variation], userDataDescriptors: Seq[UserDataDescriptor])
+/**
+  * App-instance's configuration
+  *
+  * @param variations available variations
+  * @param userDataDescriptors  user-data descriptors converting its identity into point
+  *                             in high-dimensional feature-space
+  */
+case class AppInstanceConfig(
+  variations:           Seq[Variation],
+  userDataDescriptors:  Seq[UserDataDescriptor],
+  model:                AppInstanceConfig.Model
+)
+
 
 // TODO(kudinkin): Merge `AppInstanceConfig` & `AppInstanceConfig.Record`
 object AppInstanceConfig {
-  val empty = AppInstanceConfig(Seq(), Seq())
+
+  type ClassificationModel  = SparkClassificationModel[_ <: SparkModel.Model]
+  type RegressionModel      = SparkRegressionModel[_ <: SparkModel.Model]
+
+  type Model = Option[Either[ClassificationModel, RegressionModel]]
 
   val `variations`  = "variations"
   val `descriptors` = "descriptors"
+  val `model`       = "model"
+
+  val sentinel = AppInstanceConfig(variations = Seq(), userDataDescriptors = Seq(), model = None)
 
   case class Record(
     appId:    String,
