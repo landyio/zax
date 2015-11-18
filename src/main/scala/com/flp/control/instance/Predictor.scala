@@ -2,6 +2,7 @@ package com.flp.control.instance
 
 import com.flp.control.model.{UserDataDescriptor, UserIdentity, Variation}
 import org.apache.spark.mllib.linalg.{DenseVector, Vector}
+import org.apache.spark.mllib.tree.model.DecisionTreeModel
 import org.apache.spark.rdd.RDD
 
 import scala.language.reflectiveCalls
@@ -159,7 +160,7 @@ trait ClassificationModel {
   def predict(vector: Seq[Double]): Int
 }
 
-trait SparkModel[T <: SparkModel.Model] {
+trait SparkModel[+T <: SparkModel.Model] {
   val model: T
 }
 
@@ -177,7 +178,7 @@ object SparkModel {
 }
 
 
-class SparkRegressionModel[T <: SparkModel.Model](override val model: T)  extends RegressionModel
+class SparkRegressionModel[+T <: SparkModel.Model](override val model: T) extends RegressionModel
                                                                           with    SparkModel[T] {
 
   // TODO(kudinkin): Purge `reflective`-call(s) by narrowing down model-types explicitly
@@ -187,14 +188,21 @@ class SparkRegressionModel[T <: SparkModel.Model](override val model: T)  extend
 
 }
 
-class SparkClassificationModel[T <: SparkModel.Model](override val model: T)  extends ClassificationModel
+final case class SparkDecisionTreeRegressionModel(override val model: DecisionTreeModel)
+  extends SparkRegressionModel[DecisionTreeModel](model)
+
+class SparkClassificationModel[+T <: SparkModel.Model](override val model: T) extends ClassificationModel
                                                                               with    SparkModel[T] {
 
   // TODO(kudinkin): Purge `reflective`-call(s) by narrowing down model-types explicitly
 
   override def predict(seq: Seq[Double]): Int =
     model.predict(new DenseVector(seq.toArray)).toInt
+
 }
+
+final case class SparkDecisionTreeClassificationModel(override val model: DecisionTreeModel)
+  extends SparkClassificationModel[DecisionTreeModel](model)
 
 // predicted labels are +1 or -1 for GBT.
 //class SparkRandomForestRegressionModel(override val model: RandomForestModel)
