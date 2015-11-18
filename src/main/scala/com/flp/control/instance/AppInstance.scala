@@ -5,17 +5,22 @@ import akka.pattern.pipe
 import akka.util.Timeout
 import com.flp.control.akka.ExecutingActor
 import com.flp.control.boot.Boot
-import com.flp.control.instance.AppInstance.Commands.{ApplyConfig, GetStatusResponse}
 import com.flp.control.model._
 import com.flp.control.spark.SparkDriverActor
 import com.flp.control.storage.Storage
 import com.flp.control.storage.Storage.Commands.UpdateResponse
 import com.flp.control.util.boolean2Int
 
-import scala.concurrent.Future
+import scala.concurrent.{Await, Future}
+import scala.util.{Failure, Success}
+
+import scala.language.{implicitConversions, postfixOps}
 
 class AppInstanceActor(val appId: String) extends ExecutingActor {
+
   import AppInstance._
+
+  import util.State._
 
   private val sparkDriverRef = Boot.actor(classOf[SparkDriverActor].getName)
 
@@ -245,17 +250,39 @@ class AppInstanceActor(val appId: String) extends ExecutingActor {
   }
 
   override def receive: Receive = trace {
-    case Commands.ApplyConfig(cfg)    => sender ! applyConfig(cfg)
-    case Commands.GetStatusRequest()  => statusAsResponse() pipeTo sender()
-    case Commands.GetConfigRequest()  => sender ! Commands.GetConfigResponse(config())
 
-    case Commands.PredictRequest(uid) => sender ! Commands.PredictResponse(predict(uid))
-    case Commands.TrainRequest()      => train() pipeTo sender()
+    //
+    // TODO(kudinkin): Transition to `akka.FSM` (!)
+    //
 
-    case Commands.SelfKillCheck() => tryShutdown()
-    case Commands.StartRequest()  => changeRunStateToStart() pipeTo sender()
-    case Commands.StopRequest()   => changeRunStateToStop() pipeTo sender()
+    case Commands.ReloadConfig() => runState is Any then {
+      // TODO(kudinkin): that's a hack until `record` & `appconfig` merged
+      reloadConfig() map { acr => acr.config } pipeTo sender()
+    }
 
+    case Commands.StatusRequest() => runState is Any then {
+      getStatus pipeTo sender()
+    }
+
+    case Commands.ConfigRequest() => runState is Any then {
+      sender ! getConfig
+    }
+
+    case Commands.PredictRequest(uid) => runState is  State.NoData      or
+                                                      State.Predicting  then {
+      sender ! Commands.PredictResponse(predict(uid))
+    }
+
+    case Commands.TrainRequest() => runState is State.NoData      or
+                                                State.Predicting  then {
+      train() pipeTo sender()
+    }
+
+    case Commands.StopRequest() => runState is Any then {
+      stop() pipeTo sender()
+    }
+
+    case Commands.Suicide() => commitSuicide()
   }
 
 
@@ -318,8 +345,6 @@ trait AppInstanceMessage[Response]
 
 trait AppInstanceAutoStartMessage[Response] extends AppInstanceMessage[Response]
 
-trait AppInstanceChangeRunStateMessage extends AppInstanceAutoStartMessage[GetStatusResponse]
-
 object AppInstance {
 
   import org.apache.commons.lang3.StringUtils._
@@ -365,14 +390,14 @@ object AppInstance {
 
   object Commands {
 
-    private[instance] case class SelfKillCheck()
-    private[instance] case class ApplyConfig(config: AppInstanceConfig.Record)
+    private[instance] case class Suicide()
 
-    case class GetStatusRequest() extends AppInstanceAutoStartMessage[GetStatusResponse]
-    case class GetStatusResponse(status: AppInstanceStatus)
+    case class ReloadConfig() extends AppInstanceAutoStartMessage[AppInstanceConfig]
 
-    case class GetConfigRequest() extends AppInstanceAutoStartMessage[GetConfigResponse]
-    case class GetConfigResponse(config: AppInstanceConfig)
+    case class StatusRequest() extends AppInstanceAutoStartMessage[AppInstanceStatus]
+    case class ConfigRequest() extends AppInstanceAutoStartMessage[AppInstanceConfig]
+
+    trait AppInstanceChangeRunStateMessage extends AppInstanceAutoStartMessage[AppInstanceStatus]
 
     case class StartRequest() extends AppInstanceChangeRunStateMessage
     case class StopRequest() extends AppInstanceChangeRunStateMessage
