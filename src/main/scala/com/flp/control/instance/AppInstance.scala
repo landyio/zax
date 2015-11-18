@@ -289,21 +289,24 @@ class AppInstanceActor(val appId: String) extends ExecutingActor {
 
   }
 
-  /** akka prestart - reload config & start selfKill */
+
+  /**
+    * Reload getConfig and start self-destructing mechanic
+    **/
   override def preStart(): Unit = {
-    reloadConfig()
-    tryShutdown(false)
+    import scala.concurrent.duration._
+
+    // TODO(kudinkin): switch to `ready` to swallow exceptions
+
+    Await.result(
+      reloadConfig().andThen {
+        case Failure(t) => takePoison()
+      },
+      30.seconds
+    )
+
+    context.system.scheduler.scheduleOnce(2.minutes) { self ! Commands.Suicide() }
   }
-
-  //override def postStop(): Unit = {}
-}
-
-object AppInstanceRunState extends Enumeration {
-  val Loading     = Value // transient state
-  val NoData      = Value // finish state
-  val Stopped     = Value
-  val Training    = Value
-  val Prediction  = Value
 }
 
 case class AppInstanceStatus(
