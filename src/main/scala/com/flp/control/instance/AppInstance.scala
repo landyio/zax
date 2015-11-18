@@ -19,8 +19,8 @@ class AppInstanceActor(val appId: String) extends ExecutingActor {
 
   private val sparkDriverRef = Boot.actor(classOf[SparkDriverActor].getName)
 
-  private var runState:   AppInstanceRunState.Value = AppInstanceRunState.Loading
-  private var predictor:  Option[Predictor] = None
+  private var runState: State.Value = State.Loading
+  private var predictor: Option[Predictor] = None
 
   /**
     * Storage
@@ -279,7 +279,7 @@ class AppInstanceActor(val appId: String) extends ExecutingActor {
 }
 
 case class AppInstanceStatus(
-  runState: AppInstanceRunState.Value = AppInstanceRunState.NoData,
+  runState: AppInstance.State.Value = AppInstance.State.NoData,
   eventsAllStart    : Int = 0,
   eventsAllFinish   : Int = 0,
   eventsLearnStart  : Int = 0,
@@ -301,8 +301,8 @@ object AppInstanceConfig {
 
   case class Record(
     appId:    String,
-    runState: AppInstanceRunState.Value = AppInstanceRunState.Stopped,
-    config:   AppInstanceConfig         = AppInstanceConfig.empty
+    runState: AppInstance.State.Value = AppInstance.State.NoData,
+    config:   AppInstanceConfig       = AppInstanceConfig.sentinel
   )
 
   object Record {
@@ -310,7 +310,7 @@ object AppInstanceConfig {
     val `runState`  = "runState"
 
     def notFound(appId: String) =
-      Record(appId, AppInstanceRunState.NoData, AppInstanceConfig.empty)
+      Record(appId, AppInstance.State.NoData, AppInstanceConfig.sentinel)
   }
 }
 
@@ -335,6 +335,32 @@ object AppInstance {
 
   def actorName(appId: String): String = {
     s"app-$appId"
+  }
+
+
+  object State extends Enumeration {
+
+    /**
+      * Transient state designating app's pre-start phase
+      */
+    val Loading = Value
+
+    /**
+      * No-data phase of the app, when collected sample isn't
+      * representative enough to build relevant predictor
+      */
+    val NoData = Value
+
+    /**
+      * Active phase of the app with a long enough sample
+      * to have properly trained predictor
+      */
+    val Predicting = Value
+
+    /**
+      * Suspended
+      */
+    val Suspended = Value
   }
 
   object Commands {
