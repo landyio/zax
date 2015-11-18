@@ -10,16 +10,10 @@ import scala.language.reflectiveCalls
 
 trait Predictor {
 
-  /**
-    * User-data descriptors converting its identity into point
-    * in high-dimensional feature-space
-    */
-  val userDataDescriptors: Seq[UserDataDescriptor]
+  val config: AppInstanceConfig
 
-  /**
-    * Available variations
-    */
-  val variations: Seq[Variation]
+  def variations:           Seq[Variation]          = config.variations
+  def userDataDescriptors:  Seq[UserDataDescriptor] = config.userDataDescriptors
 
   /**
     * Predicts most relevant variation for the user with supplied identity
@@ -80,13 +74,12 @@ trait Regressor extends Predictor {
   * Classificators
   */
 object Classificator {
-  def apply(variations: Seq[Variation], userdata: Seq[UserDataDescriptor], model: ClassificationModel) =
-    new ClassificatorImpl(variations, userdata, model)
+  def apply(config: AppInstanceConfig, model: ClassificationModel) =
+    new ClassificatorImpl(config, model)
 }
 
-private[instance] class ClassificatorImpl(override val variations:          Seq[Variation],
-                                          override val userDataDescriptors: Seq[UserDataDescriptor],
-                                          override val model:               ClassificationModel)
+private[instance] class ClassificatorImpl(override val config:  AppInstanceConfig,
+                                          override val model:   ClassificationModel)
   extends Classificator
 
 
@@ -95,21 +88,19 @@ private[instance] class ClassificatorImpl(override val variations:          Seq[
   */
 object Regressor {
 
-  def apply(variations: Seq[Variation], userdata: Seq[UserDataDescriptor]) =
-    new RegressorStub(variations, userdata)
+  def apply(config: AppInstanceConfig) =
+    new RegressorStub(config)
 
-  def apply(variations: Seq[Variation], userdata: Seq[UserDataDescriptor], model: RegressionModel) =
-    new RegressorImpl(variations, userdata, model)
+  def apply(config: AppInstanceConfig, model: RegressionModel) =
+    new RegressorImpl(config, model)
 }
 
-private[instance] class RegressorImpl(override val variations:          Seq[Variation],
-                                      override val userDataDescriptors: Seq[UserDataDescriptor],
-                                      override val model:               RegressionModel)
+private[instance] class RegressorImpl(override val config:  AppInstanceConfig,
+                                      override val model:   RegressionModel)
   extends Regressor
 
-private[instance] class RegressorStub(override val variations:          Seq[Variation],
-                                      override val userDataDescriptors: Seq[UserDataDescriptor])
-  extends RegressorImpl(variations, userDataDescriptors, RegressionModel.random)
+private[instance] class RegressorStub(override val config: AppInstanceConfig)
+  extends RegressorImpl(config, RegressionModel.random)
 
 
 //
