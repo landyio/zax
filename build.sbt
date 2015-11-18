@@ -38,48 +38,48 @@ lazy val root = (project in file("."))
     name := "zax"
   )
 
-
-//// use it with `sbt one-jar` ////
+//// One-Jar //////////////////////////////////////////////////////////////////////////////////////
 import com.github.retronym.SbtOneJar._
 
 oneJarSettings
-///////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////
 
-//name := "zax"
-//version := "0.0.1"
-
-resolvers += "sonatype-releases" at "https://oss.sonatype.org/content/repositories/releases/"
+resolvers += "sonatype-releases"  at "https://oss.sonatype.org/content/repositories/releases/"
 resolvers += "sonatype-snapshots" at "https://oss.sonatype.org/content/repositories/snapshots/"
 
-// commons
 libraryDependencies ++= Seq(
   "org.scalaz"          %%  "scalaz-core"    % "7.1.3" withSources(),
   "org.specs2"          %%  "specs2-core"    % "2.4.16" % "test"
 )
 
-// akka
 libraryDependencies ++= {
-  val akkaV = "2.3.12"
+  val ver = "2.3.12"
   Seq(
-    "com.typesafe.akka"   %%  "akka-actor"     % akkaV withSources(),
-    "com.typesafe.akka"   %%  "akka-testkit"   % akkaV % "test"
+    "com.typesafe.akka"   %%  "akka-actor"     % ver withSources(),
+    "com.typesafe.akka"   %%  "akka-testkit"   % ver % "test"
   )
 }
 
-// spray
 libraryDependencies ++= {
-  val sprayV = "1.3.3"
-  val sprayJsonV = "1.3.2"
+  val sprayVer      = "1.3.3"
+  val sprayJsonVer  = "1.3.2"
   Seq(
-    "io.spray"            %%  "spray-can"      % sprayV withSources(),
-    "io.spray"            %%  "spray-routing"  % sprayV withSources(),
-    "io.spray"            %%  "spray-caching"  % sprayV withSources(),
-    "io.spray"            %%  "spray-testkit"  % sprayV  % "test",
-    "io.spray"            %%  "spray-json"     % sprayJsonV withSources()
+    "io.spray"            %%  "spray-can"      % sprayVer withSources(),
+    "io.spray"            %%  "spray-routing"  % sprayVer withSources(),
+    "io.spray"            %%  "spray-caching"  % sprayVer withSources(),
+    "io.spray"            %%  "spray-testkit"  % sprayVer  % "test",
+    "io.spray"            %%  "spray-json"     % sprayJsonVer withSources()
   )
 }
 
-// mongo
+libraryDependencies ++= {
+  val sparkVersion = "1.5.1"
+  Seq(
+    "org.apache.spark" %% "spark-core" % sparkVersion withSources(),
+    "org.apache.spark" %% "spark-mllib" % sparkVersion withSources()
+  )
+}
+
 libraryDependencies ++= {
   Seq(
     "com.typesafe.play"  %% "play-iteratees" % "2.4.2",
@@ -87,28 +87,17 @@ libraryDependencies ++= {
   )
 }
 
-// jackson
 libraryDependencies ++= {
   Seq(
-    "com.fasterxml.jackson.module" %% "jackson-module-scala" % "2.5.3"
+    "org.scala-lang.modules" %% "scala-pickling" % "0.10.2-SNAPSHOT"
   )
 }
 
-// benchmarks
 libraryDependencies ++= {
   // https://scalameter.github.io/
   // http://scalameter.github.io/home/gettingstarted/0.7/configuration/index.html
   Seq(
     //"com.storm-enroute" %% "scalameter" % "0.7-SNAPSHOT" % "test"
-  )
-}
-
-// spark
-libraryDependencies ++= {
-  val sparkVersion = "1.5.1"
-  Seq(
-    "org.apache.spark" %% "spark-core" % sparkVersion withSources(),
-    "org.apache.spark" %% "spark-mllib" % sparkVersion withSources()
   )
 }
 
