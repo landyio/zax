@@ -4,8 +4,8 @@ import com.flp.control.model.{UserDataDescriptor, UserIdentity, Variation}
 import org.apache.spark.mllib.linalg.{DenseVector, Vector}
 import org.apache.spark.rdd.RDD
 
-import scala.util.Random
 import scala.language.reflectiveCalls
+import scala.util.Random
 
 
 trait Predictor {
@@ -23,6 +23,43 @@ trait Predictor {
     */
   def predictFor(identity: UserIdentity): Variation
 
+}
+
+object Predictor {
+  def apply(config: AppInstanceConfig): Predictor = {
+    config.model match {
+      case Some(Left(m))  => buildClassifier(config, m)
+      case Some(Right(m)) => buildRegressor(config, m)
+      case None           => buildRandom(config)
+    }
+  }
+
+  def random(config: AppInstanceConfig): Predictor =
+    buildRandom(config)
+
+  /**
+    * Opportunistic predictor, picking variations randomly
+    *
+    * @return predictor
+    **/
+  private def buildRandom(config: AppInstanceConfig) =
+    Regressor(config)
+
+  /**
+    * Predictor backed by classifier
+    *
+    * @return predictor
+    */
+  private def buildClassifier(config: AppInstanceConfig, model: ClassificationModel): Predictor =
+    Classificator(config, model)
+
+  /**
+    * Predictor backed by regressor
+    *
+    * @return predictor
+    */
+  private def buildRegressor(config: AppInstanceConfig, model: RegressionModel): Predictor =
+    Regressor(config, model)
 }
 
 /**
