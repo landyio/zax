@@ -1,6 +1,7 @@
 package com.flp.control.akka
 
 import akka.actor.{Actor, ActorRef}
+import akka.event.LoggingAdapter
 import akka.util.Timeout
 
 import scala.concurrent.{ExecutionContext, Future}
@@ -9,6 +10,10 @@ trait DefaultTimeout {
   import scala.concurrent.duration._
 
   implicit val timeout: Timeout = 2.seconds
+}
+
+trait Logging {
+  def log: LoggingAdapter
 }
 
 trait AskSupport extends akka.pattern.AskSupport {
