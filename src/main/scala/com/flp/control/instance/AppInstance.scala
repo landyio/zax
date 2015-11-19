@@ -258,6 +258,12 @@ class AppInstanceActor(val appId: String) extends ExecutingActor {
   }
 
 
+  //
+  // Controlling hooks
+  //
+
+  private def stop(): Future[AppInstanceStatus] =
+    switchState(State.Suspended).flatMap { _ => getStatus }
 
   override def receive: Receive = trace {
 
