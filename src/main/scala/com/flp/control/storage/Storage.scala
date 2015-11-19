@@ -32,10 +32,12 @@ class StorageActor extends ExecutingActor {
     case Commands.LoadRequest(persister, selector, upTo) =>
       implicit val reader = persister
 
+      // TODO(kudinkin): `collect` silently swallows the errors in the `Storage`
+
       val c = find(persister.collection)
       val r = c .find(selector)
                 .cursor[persister.Target](ReadPreference.Nearest(filterTag = None))
-                .collect[List](upTo)
+                .collect[List](upTo, stopOnError = false)
 
       r.map { os => Commands.LoadResponse(os) } pipeTo sender()
 
