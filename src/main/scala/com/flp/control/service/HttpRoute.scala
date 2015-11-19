@@ -43,20 +43,22 @@ trait PrivateAppRoute extends PublicAppRoute {
     placeholder ~
       (path("config") & `json/get`) {
         extract(ctx => ctx) { ctx => {
-          import AppInstance.Commands.{GetConfigRequest, GetConfigResponse}
-          val result: Future[JsObject] = askApp[GetConfigResponse](appId, GetConfigRequest())
-            .map { res => res.config }
-            .map { v => v.toJson.asJsObject }
-          complete(result)
+          import AppInstance.Commands.ConfigRequest
+
+          complete(
+            askApp[AppInstanceConfig](appId, ConfigRequest())
+              .map { v => v.toJson.asJsObject }
+          )
         }}
       } ~
       (path("status") & `json/get`) {
         extract(ctx => ctx) { ctx => {
-          import AppInstance.Commands.{GetStatusRequest, GetStatusResponse}
-          val result: Future[JsObject] = askApp[GetStatusResponse](appId, GetStatusRequest())
-            .map { res => res.status }
-            .map { v => v.toJson.asJsObject }
-          complete(result)
+          import AppInstance.Commands.StatusRequest
+
+          complete(
+            askApp[AppInstanceStatus](appId, StatusRequest())
+              .map { v => v.toJson.asJsObject }
+          )
         }}
       } ~
       (path("create") & `json/post`) {
@@ -74,22 +76,35 @@ trait PrivateAppRoute extends PublicAppRoute {
       } ~
       (path("start") & `json/post`) {
         extract(ctx => ctx) { ctx => {
-          // TODO: XXX:
-          import AppInstance.Commands.{GetStatusResponse, StartRequest}
-          val result: Future[JsObject] = askApp[GetStatusResponse](appId, StartRequest())
-            .map { res => res.status }
-            .map { v => JsObject("id" -> JsString(appId), "result" -> JsBoolean(true), "status" -> v.toJson.asJsObject) }
-          complete(result)
+          import AppInstance.Commands.StartRequest
+
+          // TODO(kudinkin): abstract
+          complete(
+            askApp[AppInstanceStatus](appId, StartRequest())
+              .map { v =>
+                JsObject(
+                  "id"      -> JsString(appId),
+                  "result"  -> JsBoolean(true),
+                  "status"  -> v.toJson.asJsObject)
+              }
+          )
         }}
       } ~
       (path("stop") & `json/post`) {
         extract(ctx => ctx) { ctx => {
-          // TODO: XXX:
-          import AppInstance.Commands.{GetStatusResponse, StopRequest}
-          val result: Future[JsObject] = askApp[GetStatusResponse](appId, StopRequest())
-            .map { res => res.status }
-            .map { v => JsObject("id" -> JsString(appId), "result" -> JsBoolean(true), "status" -> v.toJson.asJsObject) }
-          complete(result)
+          import AppInstance.Commands.StopRequest
+
+          // TODO(kudinkin): abstract
+          complete(
+            askApp[AppInstanceStatus](appId, StopRequest())
+              .map { v =>
+                JsObject(
+                  "id"      -> JsString(appId),
+                  "result"  -> JsBoolean(true),
+                  "status"  -> v.toJson.asJsObject
+                )
+              }
+          )
         }}
       }
   }
@@ -194,7 +209,8 @@ trait AppRoute extends Service {
   }
 
   @inline
-  private[service] def askApps[T](message: Any)(implicit timeout: Timeout): Future[T] = ask[T](appsRef, message)
+  private[service] def askApps[T](message: Any)(implicit timeout: Timeout): Future[T] =
+    ask[T](appsRef, message)
 
   @inline
   private[service] def askApp[T](appId: String, message: AppInstanceMessage[T])(implicit timeout: Timeout): Future[T] =
