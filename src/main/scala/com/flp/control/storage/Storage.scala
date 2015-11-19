@@ -5,14 +5,16 @@ import com.flp.control.akka.ExecutingActor
 import com.flp.control.instance._
 import com.flp.control.model._
 import com.typesafe.config.{Config, ConfigFactory}
+import org.apache.spark.mllib.tree.model.DecisionTreeModel
+
+import scala.language.implicitConversions
 
 class StorageActor extends ExecutingActor {
 
+  import Storage._
   import reactivemongo.api._
   import reactivemongo.api.collections.bson._
   import reactivemongo.bson._
-
-  import Storage._
 
   private val config: Config = ConfigFactory.load()
   private val nodes: Seq[String] = config.getString("flp.mongo.hosts").split(",").toSeq.map { s => s.trim }
@@ -180,6 +182,36 @@ object Storage extends reactivemongo.bson.DefaultBSONHandlers {
   // Persisters
   //
 
+  implicit val userIdentityBSON =
+    new BSONDocumentReader[UserIdentity] with BSONDocumentWriter[UserIdentity] {
+
+      override def write(uid: UserIdentity): BSONDocument =
+        BSON.writeDocument(uid.params)
+
+      override def read(bson: BSONDocument): UserIdentity =
+        bson.asOpt[UserIdentity.Params] collect { case ps => UserIdentity(ps) } getOrElse UserIdentity.empty
+    }
+
+  implicit val variationBSON =
+    new BSONReader[BSONString, Variation] with BSONWriter[Variation, BSONString] {
+
+      override def write(v: Variation): BSONString =
+        BSON.write(v.id)
+
+      override def read(bson: BSONString): Variation =
+        Variation(bson.value)
+    }
+
+  implicit val userDataDescriptorBSON =
+    new BSONReader[BSONString, UserDataDescriptor] with BSONWriter[UserDataDescriptor, BSONString] {
+
+      override def write(v: UserDataDescriptor): BSONString =
+        BSON.write(v.name)
+
+      override def read(bson: BSONString): UserDataDescriptor =
+        UserDataDescriptor(bson.value)
+    }
+
   // TODO(kudinkin): Move persisters to actual classes they serialize
 
   implicit val startEventBSON =
@@ -228,55 +260,67 @@ object Storage extends reactivemongo.bson.DefaultBSONHandlers {
         )
     }
 
-  implicit val userIdentityBSON =
-    new BSONDocumentReader[UserIdentity] with BSONDocumentWriter[UserIdentity] {
+  implicit val modelBSON =
+    new BSONReader[BSONString, AppInstanceConfig.Model] with BSONWriter[AppInstanceConfig.Model, BSONString] {
 
-      override def write(uid: UserIdentity): BSONDocument =
-        BSON.writeDocument(uid.params)
+      //
+      // TODO(kudinkin): Disabled until scala-pickling-0.11.* arrives
+      //
 
-      override def read(bson: BSONDocument): UserIdentity =
-        bson.asOpt[UserIdentity.Params] collect { case ps => UserIdentity(ps) } getOrElse UserIdentity.empty
+      import scala.pickling._
+      import Defaults._
+      import json._
+
+      //implicit val eitherPickler = Pickler.generate[AppInstanceConfig.Model]
+
+      override def write(model: AppInstanceConfig.Model): BSONString =
+        BSONString(
+          model.flatMap {
+            case Left(e)  => Some(e.asInstanceOf[SparkDecisionTreeClassificationModel].pickle)
+            case Right(e) => Some(e.asInstanceOf[SparkDecisionTreeRegressionModel].pickle)
+          }.pickle.value
+        )
+
+      override def read(bson: BSONString): AppInstanceConfig.Model =
+        bson.value.unpickle[Option[String]].map {
+          case m =>
+            m .unpickle[SparkModel[DecisionTreeModel]] match {
+              case c @ SparkDecisionTreeClassificationModel(_)  => Left(c)
+              case r @ SparkDecisionTreeRegressionModel(_)      => Right(r)
+              case _ =>
+                throw new UnsupportedOperationException()
+            }
+        }
     }
 
-  implicit val variationBSON =
-    new BSONReader[BSONString, Variation] with BSONWriter[Variation, BSONString] {
 
-      override def write(v: Variation): BSONString =
-        BSON.write(v.id)
-
-      override def read(bson: BSONString): Variation =
-        Variation(bson.value)
-    }
-
-  implicit val userDataDescriptorBSON =
-    new BSONReader[BSONString, UserDataDescriptor] with BSONWriter[UserDataDescriptor, BSONString] {
-
-      override def write(v: UserDataDescriptor): BSONString =
-        BSON.write(v.name)
-
-      override def read(bson: BSONString): UserDataDescriptor =
-        UserDataDescriptor(bson.value)
-    }
-
+  //
   // TODO(kudinkin): Merge
+  //
 
   implicit val appInstanceConfigBSON =
     new BSONDocumentReader[AppInstanceConfig] with BSONDocumentWriter[AppInstanceConfig] {
       import AppInstanceConfig._
 
-      override def write(t: AppInstanceConfig): BSONDocument = {
+      override def write(c: AppInstanceConfig): BSONDocument = {
         BSONDocument(
-          `variations`   -> t.variations,
-          `descriptors`  -> t.userDataDescriptors
+          `variations`  -> c.variations,
+          `descriptors` -> c.userDataDescriptors,
+          `model`       -> c.model
         )
       }
 
       override def read(bson: BSONDocument): AppInstanceConfig = {
         { for (
-            vs <- bson.getAs[Seq[Variation]]          (`variations`);
-            ds <- bson.getAs[Seq[UserDataDescriptor]] (`descriptors`)
-          ) yield AppInstanceConfig(variations = vs, userDataDescriptors = ds)
-        } getOrElse AppInstanceConfig.empty
+            vs    <- bson.getAs[Seq[Variation]]           (`variations`);
+            ds    <- bson.getAs[Seq[UserDataDescriptor]]  (`descriptors`);
+            model <- bson.getAs[AppInstanceConfig.Model]  (`model`)
+          ) yield AppInstanceConfig(
+              variations          = vs.toList,
+              userDataDescriptors = ds.toList,
+              model               = model
+            )
+        }.get // getOrElse AppInstanceConfig.empty
       }
     }
 
@@ -292,11 +336,12 @@ object Storage extends reactivemongo.bson.DefaultBSONHandlers {
           `config`    -> BSON.writeDocument(t.config)
         )
 
-      override def read(bson: BSONDocument): AppInstanceConfig.Record =
+      override def read(bson: BSONDocument): AppInstanceConfig.Record = {
         AppInstanceConfig.Record(
           appId     = bson.getAs[BSONObjectID]      (`_id`)       map { i => i.stringify } getOrElse { "" },
-          runState  = bson.getAs[String]            (`runState`)  map { s => AppInstanceRunState.withName(s) } getOrElse { AppInstanceRunState.Stopped },
+          runState  = bson.getAs[String]            (`runState`)  map { s => AppInstance.State.withName(s) } getOrElse { AppInstance.State.Suspended },
           config    = bson.getAs[AppInstanceConfig] (`config`)   .get
         )
+      }
     }
 }
