@@ -62,11 +62,30 @@ trait PrivateAppRoute extends PublicAppRoute {
         }}
       } ~
       (path("create") & `json/post`) {
+
+        //
+        // TODO(kudinkin): move to `/apps/create`
+        //
+
         entity(as[JsObject]) { json => {
-          val config: AppInstanceConfig = json.convertTo[AppInstanceConfig]
-          val result: Future[JsObject] = store(AppInstanceConfig.Record(appId = appId, config = config))
-            .map { res => JsObject("id" -> JsString(appId), "result" -> JsBoolean(res.ok)) }
-          complete(result)
+          val config = json.convertTo[AppInstanceConfig]
+
+          import AppInstance.Commands.ReloadConfig
+
+          complete(
+            store(AppInstanceConfig.Record(appId = appId, config = config))
+              .map { res =>
+                JsObject(
+                  "id"      -> JsString(appId),
+                  "result"  -> JsBoolean(res.ok)
+                )
+              }
+              .andThen {
+                case Success(x) =>
+                  log.info("Successfully created app-instance {#{}}!", appId)
+                  askApp[AppInstanceConfig](appId, ReloadConfig())
+              }
+          )
         }} ~ die(`json body required`)
       } ~
       (path("delete") & `json/post`) {
