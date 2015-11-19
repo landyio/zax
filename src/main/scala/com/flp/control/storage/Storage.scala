@@ -219,17 +219,17 @@ object Storage extends reactivemongo.bson.DefaultBSONHandlers {
       import Event._
       val collection: String = s"events:${`type:Start`}"
 
-      override def write(t: StartEvent) =
+      override def write(t: StartEvent): BSONDocument =
         BSONDocument(
           `appId`     -> t.appId,
           `type`      -> `type:Start`,
           `timestamp` -> t.timestamp,
           `session`   -> t.session,
-          `identity`  -> BSON.writeDocument(t.identity)(userIdentityBSON),
-          `variation` -> BSON.write(t.variation)(variationBSON)
+          `identity`  -> BSON.writeDocument(t.identity),
+          `variation` -> BSON.write(t.variation)
         )
 
-      override def read(bson: BSONDocument) =
+      override def read(bson: BSONDocument): StartEvent =
         StartEvent(
           appId     = bson.getAs[String]        (`appId`)     .get,
           session   = bson.getAs[String]        (`session`)   .get,
