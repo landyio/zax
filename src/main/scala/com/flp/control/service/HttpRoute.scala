@@ -231,10 +231,15 @@ trait AppRoute extends Service {
   private val appsRef    = Boot.actor(AppInstances.actorName)
   private val storageRef = Boot.actor(Storage.actorName)
 
+  import Storage.Commands.{StoreResponse, Store}
+
   @inline
-  private[service] def store[E](element: E)(implicit persister: Storage.PersisterW[E], timeout: Timeout): Future[Storage.Commands.StoreResponse] = {
-    val message = Storage.Commands.Store(element)(persister = persister)
-    ask[Storage.Commands.StoreResponse](storageRef, message)
+  private[service] def store[E](element: E)(implicit persister: Storage.PersisterW[E], timeout: Timeout): Future[StoreResponse] = {
+    ask[StoreResponse](storageRef, Store(element)(persister = persister))
+      .andThen {
+        case Success(r) =>
+          log.debug("Stored '{}' ({}) instance / {{}}", element.getClass.getName, element.hashCode(), element)
+      }
   }
 
   @inline
