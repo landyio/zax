@@ -109,41 +109,26 @@ class AppInstanceActor(val appId: String) extends ExecutingActor {
     **/
   private def getStatus: Future[AppInstanceStatus] = {
 
-    import com.flp.control.storage.Storage
+    import com.flp.control.storage.Storage.Commands.{Count, CountResponse}
 
-    val state = this.runState
-
-    //
-    // TODO(kudinkin): Remove this
-    //
-    val fake: Boolean = state match {
-      case State.NoData => true
-      case _ => false
-    }
-    if (fake) {
-      // its fake getStatus, no db lookup required
-      return Future {
-        AppInstanceStatus(state)
-      }
-    }
-
+    val state   = this.runState
     val storage = this.storage()
 
     for {
 
       eventsAllStart <-
-      ask(storage, Storage.Commands.Count[StartEvent](
-        Event.`appId` -> appId,
-        Event.`type` -> Event.`type:Start`
-      )).mapTo[Storage.Commands.CountResponse]
-        .map(_.count)
+        ask(storage, Count[StartEvent](
+          Event.`appId` -> appId,
+          Event.`type`  -> Event.`type:Start`
+        )).mapTo[CountResponse]
+          .map(_.count)
 
       eventsAllFinish <-
-      ask(storage, Storage.Commands.Count[StartEvent](
-        Event.`appId` -> appId,
-        Event.`type` -> Event.`type:Finish`
-      )).mapTo[Storage.Commands.CountResponse]
-        .map(x => x.count)
+        ask(storage, Count[FinishEvent](
+          Event.`appId` -> appId,
+          Event.`type`  -> Event.`type:Finish`
+        )).mapTo[CountResponse]
+          .map(x => x.count)
 
     } yield AppInstanceStatus(state, eventsAllStart, eventsAllFinish)
   }
