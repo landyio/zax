@@ -8,8 +8,8 @@ import com.flp.control.boot.Boot
 import com.flp.control.model._
 import com.flp.control.spark.SparkDriverActor
 import com.flp.control.storage.Storage
-import com.flp.control.storage.Storage.Commands.UpdateResponse
-import com.flp.control.util.boolean2Int
+import com.flp.control.storage.Storage.Commands.{Update, UpdateResponse}
+import com.flp.control.util.{Identity, boolean2Int}
 
 import scala.concurrent.{Await, Future}
 import scala.util.{Failure, Success}
