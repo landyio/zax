@@ -152,7 +152,7 @@ trait PublicAppRoute extends AppRoute {
   }
 
   @inline
-  private[service] def retrain(appId: String): Future[Boolean] = {
+  private[service] def train(appId: String): Future[Boolean] = {
     import AppInstance.Commands.{TrainRequest, TrainResponse, trainTimeout}
 
     askApp[TrainResponse](appId, TrainRequest())(timeout = trainTimeout)
@@ -172,12 +172,22 @@ trait PublicAppRoute extends AppRoute {
     `options/origin` ~
       (path("start") & `json/post`) {
         entity(as[JsObject]) { json => clientIP { ip => {
-          val ev: StartEvent = json.convertTo[StartEvent]
+          val ev = json.convertTo[StartEvent]
 
           store(ev.copy(appId = appId, identity = ev.identity ++ ServerParams.get(ip.toOption)))
-          retrain(appId)
+            .andThen {
+              case Success(_) =>
+                // TODO(kudinkin): policy?
+                train(appId)
+            }
 
-          complete("")
+          complete(
+            Future {
+              JsObject(
+                "event" -> ev.toJson
+              )
+            }
+          )
         }}} ~ die(`json body required`)
       } ~
       (path("predict") & `json/post`) {
