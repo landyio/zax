@@ -217,7 +217,7 @@ object Storage extends reactivemongo.bson.DefaultBSONHandlers {
   implicit val startEventBSON =
     new Persister[StartEvent] {
       import Event._
-      val collection: String = "events"
+      val collection: String = s"events:${`type:Start`}"
 
       override def write(t: StartEvent) =
         BSONDocument(
@@ -242,7 +242,7 @@ object Storage extends reactivemongo.bson.DefaultBSONHandlers {
   implicit val finishEventBSON =
     new Persister[FinishEvent] {
       import Event._
-      override val collection: String = "events"
+      override val collection: String = s"events${`type:Finish`}"
 
       override def write(t: FinishEvent) =
         BSONDocument(
