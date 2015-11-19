@@ -65,8 +65,8 @@ trait JsonSerialization extends DefaultJsonProtocol with SprayJsonSupport {
       { for (
           vs <- field[Seq[Variation]]           (value, `variations`);
           ds <- field[Seq[UserDataDescriptor]]  (value, `descriptors`)
-        ) yield AppInstanceConfig(vs, ds)
-      } getOrElse AppInstanceConfig.empty
+        ) yield AppInstanceConfig(variations = vs, userDataDescriptors = ds, model = None)
+      } getOrElse AppInstanceConfig.sentinel
     }
   }
 
