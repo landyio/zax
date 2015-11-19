@@ -66,7 +66,7 @@ class SparkDriverActor(private val sc: SparkContext) extends ExecutingActor {
 
     val maxBins     = 32
     val maxDepth    = 10
-    val impurity    = "gini"
+    val impurity    = "variance"
 
     val catFeaturesInfo = Map[Int, Int]()
 
