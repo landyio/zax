@@ -6,6 +6,13 @@ package object util {
 
   implicit def boolean2Int(b: Boolean): Int = if (b) 1 else 0
 
+  object Reflect {
+    def moduleFrom[T](sym: scala.reflect.runtime.universe.Symbol): T = {
+      val mod = sym.owner.typeSignature.member(sym.name.toTermName)
+      reflect.runtime.currentMirror.reflectModule(mod.asModule).instance.asInstanceOf[T]
+    }
+  }
+
   object Identity {
     @inline def partial[T](): PartialFunction[T, T] = { case x => x }
     @inline def total[T](): (T) => T = { x => x }

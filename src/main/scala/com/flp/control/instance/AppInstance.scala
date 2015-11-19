@@ -9,7 +9,7 @@ import com.flp.control.model._
 import com.flp.control.spark.SparkDriverActor
 import com.flp.control.storage.Storage
 import com.flp.control.storage.Storage.Commands.{Update, UpdateResponse}
-import com.flp.control.util.{Identity, boolean2Int}
+import com.flp.control.util.{Reflect, Identity, boolean2Int}
 
 import scala.concurrent.{Await, Future}
 import scala.util.{Failure, Success}
@@ -24,7 +24,7 @@ class AppInstanceActor(val appId: String) extends ExecutingActor {
 
   private val sparkDriverRef = Boot.actor(classOf[SparkDriverActor].getName)
 
-  private var runState: State.Value = State.Loading
+  private var runState: State = State.Loading
   private var predictor: Option[Predictor] = None
 
   /**
@@ -172,7 +172,7 @@ class AppInstanceActor(val appId: String) extends ExecutingActor {
     }
   }
 
-  private def updateState(state: State.Value): State.Value = {
+  private def updateState(state: State): State = {
     runState = state
     runState
   }
@@ -198,7 +198,7 @@ class AppInstanceActor(val appId: String) extends ExecutingActor {
     *
     * @param state target state being switched to
     */
-  private def switchState(state: State.Value): Future[AppInstanceConfig.Record] = {
+  private def switchState(state: State): Future[AppInstanceConfig.Record] = {
     ask[UpdateResponse](this.storage(), Update[AppInstanceConfig.Record](appId) {
       AppInstanceConfig.Record.`runState` -> state.toString
     }).map      { r => r.ok }
@@ -320,7 +320,7 @@ class AppInstanceActor(val appId: String) extends ExecutingActor {
 }
 
 case class AppInstanceStatus(
-  runState: AppInstance.State.Value = AppInstance.State.NoData,
+  runState: AppInstance.State = AppInstance.State.NoData,
   eventsAllStart    : Int = 0,
   eventsAllFinish   : Int = 0,
   eventsLearnStart  : Int = 0,
@@ -361,8 +361,8 @@ object AppInstanceConfig {
 
   case class Record(
     appId:    String,
-    runState: AppInstance.State.Value = AppInstance.State.NoData,
-    config:   AppInstanceConfig       = AppInstanceConfig.sentinel
+    runState: AppInstance.State = AppInstance.State.NoData,
+    config:   AppInstanceConfig = AppInstanceConfig.sentinel
   )
 
   object Record {
@@ -396,35 +396,45 @@ object AppInstance {
   }
 
 
-  object State extends Enumeration {
+  sealed trait State
+
+  object State {
+
+    def withName(name: String): State = {
+      import scala.reflect.runtime.{ universe => u }
+      Reflect.moduleFrom[State](u.typeOf[State.type].decls.filter(_.isModule)
+                                                          .filter(_.name.decodedName.toString == name)
+                                                          .head)
+    }
 
     /**
       * Transient state designating app's pre-start phase
       */
-    val Loading = Value
+    case object Loading extends State
 
     /**
       * No-data phase of the app, when collected sample isn't
       * representative enough to build relevant predictor
       */
-    val NoData = Value
+    case object NoData extends State
 
     /**
       * Active phase of the app with a long enough sample
       * to have properly trained predictor
       */
-    val Predicting = Value
+    case object Predicting extends State
 
     /**
       * Training phase of the app when no more training requests
       * are accepted until finished
       */
-    val Training = Value
+    case object Training extends State
 
     /**
       * Suspended
       */
-    val Suspended = Value
+    case object Suspended extends State
+
   }
 
   object Commands {
