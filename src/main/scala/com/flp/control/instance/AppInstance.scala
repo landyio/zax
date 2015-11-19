@@ -62,7 +62,7 @@ class AppInstanceActor(val appId: String) extends ExecutingActor {
 
           buildTrainingSample(SAMPLE_MAX_SIZE)
             .flatMap { sample => ask[TrainRegressorResponse](sparkDriverRef, TrainRegressor(explain(sample))) }
-            .flatMap {
+            .map {
               case TrainRegressorResponse(model, error) =>
 
                 import Storage.{appInstanceConfigBSON, appInstanceConfigRecordBSON}
@@ -78,9 +78,7 @@ class AppInstanceActor(val appId: String) extends ExecutingActor {
                     )
                 })
 
-                switchState(State.Predicting).map(
-                  _ => Some(error)
-                )
+                Some(error)
             }
             .andThen {
               case Failure(t) =>
@@ -98,7 +96,7 @@ class AppInstanceActor(val appId: String) extends ExecutingActor {
     predictor match {
       case Some(p) =>
         sample.map {
-          case ((uid, v), goal) => (uid.toFeatures(p.userDataDescriptors) ++ Seq(v.id.toDouble), goal.toDouble)
+          case ((uid, v), goal) => (uid.toFeatures(p.config.userDataDescriptors) ++ Seq(v.id.toDouble), goal.toDouble)
         }
     }
   }
@@ -160,7 +158,10 @@ class AppInstanceActor(val appId: String) extends ExecutingActor {
       case State.Predicting =>
         predictor = Some(Predictor(r.config))
 
-      case State.NoData =>
+      case State.Training =>
+        /* NOP */
+
+      case State.NoData   =>
         predictor = Some(Predictor.random(r.config))
 
       case State.Suspended =>
@@ -276,7 +277,19 @@ class AppInstanceActor(val appId: String) extends ExecutingActor {
 
     case Commands.TrainRequest() => runState is State.NoData      or
                                                 State.Predicting  then {
-      train() pipeTo sender()
+
+      import scala.concurrent.duration._
+
+      switchState(State.Training).flatMap { _ =>
+        train() andThen {
+          case Success(Some(_)) =>
+
+            // TODO(kudinkin): REMOVE WHEN TRANSITIONED TO FSM
+            context.system.scheduler.scheduleOnce(10.seconds) {
+              switchState(State.Predicting)
+            }
+        }
+      } pipeTo sender()
     }
 
     case Commands.StopRequest() => runState is Any then {
@@ -401,6 +414,12 @@ object AppInstance {
       * to have properly trained predictor
       */
     val Predicting = Value
+
+    /**
+      * Training phase of the app when no more training requests
+      * are accepted until finished
+      */
+    val Training = Value
 
     /**
       * Suspended
