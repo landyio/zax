@@ -2,7 +2,7 @@ package com.flp.control.service
 
 import akka.actor._
 import akka.util.Timeout
-import com.flp.control.akka.{AskSupport, DefaultTimeout}
+import com.flp.control.akka.{Logging, AskSupport, DefaultTimeout}
 import com.flp.control.boot.Boot
 import com.flp.control.instance._
 import com.flp.control.model._
@@ -19,14 +19,16 @@ import spray.routing.authentication._
 import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Failure, Success}
 
-class PrivateHttpRouteActor extends HttpServiceActor with PrivateAppRoute {
+class PrivateHttpRouteActor extends HttpServiceActor  with PrivateAppRoute
+                                                      with ActorLogging {
 
   def receive = runRoute(route)
   val route: Route = appRoute
 
 }
 
-class PublicHttpRouteActor extends HttpServiceActor with PublicAppRoute {
+class PublicHttpRouteActor extends HttpServiceActor with PublicAppRoute
+                                                    with ActorLogging {
 
   def receive = runRoute(route)
   val route: Route = appRoute
@@ -210,6 +212,7 @@ trait AppRoute extends Service {
 
 
 trait Service extends HttpService with JsonSerialization
+                                  with Logging
                                   with AskSupport
                                   with DefaultTimeout {
 
