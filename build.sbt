@@ -23,7 +23,8 @@ lazy val common = Seq(
   scalacOptions     := Seq("-target:jvm-1.8")
                     ++ Seq("-encoding", "utf8")
                     ++ Seq("-unchecked", "-deprecation", "-feature")
-                    ++ Seq("-optimise"),
+                    ++ Seq("-optimise")
+                    ++ Seq("-Xlog-implicits"),
 //                    ++ Seq("-Yinline-warnings")
 //                    ++ Seq("-Xexperimental")
 
@@ -39,14 +40,17 @@ lazy val root = (project in file("."))
   )
 
 //// One-Jar //////////////////////////////////////////////////////////////////////////////////////
-import com.github.retronym.SbtOneJar._
+// NB:
+//  Disabled, polluting project with its own plugins
+//
+//import com.github.retronym.SbtOneJar._
 
-oneJarSettings
+//oneJarSettings
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
+resolvers += "Local" at "file://" + Path.userHome.absolutePath + "/.ivy2/local"
 resolvers += "sonatype-releases"  at "https://oss.sonatype.org/content/repositories/releases/"
 resolvers += "sonatype-snapshots" at "https://oss.sonatype.org/content/repositories/snapshots/"
-resolvers += "bintray-maven-releases" at "https://bintray.com/sbt/maven-releases"
 
 libraryDependencies ++= Seq(
   "org.scalaz"          %%  "scalaz-core"    % "7.1.3" withSources(),
@@ -90,8 +94,8 @@ libraryDependencies ++= {
 
 libraryDependencies ++= {
   Seq(
-    "org.scala-sbt" %% "serialization" % "0.1.2",
-    "org.scala-lang.modules" %% "scala-pickling" % "0.10.2-SNAPSHOT"
+    "org.scala-lang.modules" %% "scala-pickling" % "0.10.3-SNAPSHOT" withSources(),
+    "org.scala-sbt" %% "serialization" % "0.1.2"
   )
 }
 

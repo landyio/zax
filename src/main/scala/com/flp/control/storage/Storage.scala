@@ -2,14 +2,9 @@ package com.flp.control.storage
 
 import akka.pattern.pipe
 import com.flp.control.akka.ExecutingActor
-import com.flp.control.instance.AppInstanceConfig._
 import com.flp.control.instance._
 import com.flp.control.model._
 import com.typesafe.config.{Config, ConfigFactory}
-import org.apache.spark.mllib.tree.configuration.FeatureType
-import org.apache.spark.mllib.tree.configuration.FeatureType.FeatureType
-import org.apache.spark.mllib.tree.configuration.{FeatureType, Algo}
-import org.apache.spark.mllib.tree.model.{DecisionTreeModel, InformationGainStats, Predict, Split}
 
 import scala.language.implicitConversions
 import scala.util.Failure
@@ -187,7 +182,7 @@ object Storage extends reactivemongo.bson.DefaultBSONHandlers {
   // Persisters
   //
 
-  implicit val userIdentityBSON =
+  implicit val userIdentityBSONSerializer =
     new BSONDocumentReader[UserIdentity] with BSONDocumentWriter[UserIdentity] {
 
       override def write(uid: UserIdentity): BSONDocument =
@@ -197,7 +192,7 @@ object Storage extends reactivemongo.bson.DefaultBSONHandlers {
         bson.asOpt[UserIdentity.Params] collect { case ps => UserIdentity(ps) } getOrElse UserIdentity.empty
     }
 
-  implicit val variationBSON =
+  implicit val variationBSONSerializer =
     new BSONReader[BSONString, Variation] with BSONWriter[Variation, BSONString] {
 
       override def write(v: Variation): BSONString =
@@ -207,7 +202,7 @@ object Storage extends reactivemongo.bson.DefaultBSONHandlers {
         Variation(bson.value)
     }
 
-  implicit val userDataDescriptorBSON =
+  implicit val userDataDescriptorBSONSerializer =
     new BSONReader[BSONString, UserDataDescriptor] with BSONWriter[UserDataDescriptor, BSONString] {
 
       override def write(v: UserDataDescriptor): BSONString =
@@ -219,7 +214,7 @@ object Storage extends reactivemongo.bson.DefaultBSONHandlers {
 
   // TODO(kudinkin): Move persisters to actual classes they serialize
 
-  implicit val startEventBSON =
+  implicit val startEventBSONSerializer =
     new Persister[StartEvent] {
       import Event._
       val collection: String = s"events:${`type:Start`}"
@@ -244,7 +239,7 @@ object Storage extends reactivemongo.bson.DefaultBSONHandlers {
         )
     }
 
-  implicit val finishEventBSON =
+  implicit val finishEventBSONSerializer =
     new Persister[FinishEvent] {
       import Event._
       override val collection: String = s"events${`type:Finish`}"
@@ -265,275 +260,137 @@ object Storage extends reactivemongo.bson.DefaultBSONHandlers {
         )
     }
 
-  import scala.pickling.{PBuilder, Pickler}
 
-  abstract class AbstractPicklerUnpickler[T]() extends scala.AnyRef with scala.pickling.Pickler[T] with scala.pickling.Unpickler[T] {
-    def putInto[T](field: T, builder: PBuilder)(implicit pickler: Pickler[T]): Unit = {
-      builder.hintTag(pickler.tag)
-      pickler.pickle(field, builder)
+  object Model {
+
+    abstract class AbstractPicklerUnpickler[T]() extends scala.AnyRef with scala.pickling.Pickler[T] with scala.pickling.Unpickler[T] {
+      import scala.pickling.{PBuilder, Pickler}
+
+      def putInto[F](field: F, builder: PBuilder)(implicit pickler: Pickler[F]): Unit = {
+        pickler.pickle(field, builder)
+      }
     }
-  }
 
 
-  implicit val modelBSON =
-    new BSONReader[BSONString, AppInstanceConfig.Model] with BSONWriter[AppInstanceConfig.Model, BSONString] {
+    //
+    // NOTA BENE
+    //    That's inevitable evil: `pickling` can't live with enums (even Scala's ones)
+    //    https://github.com/scala/pickling/issues/17
+    //
 
-      //
-      // TODO(kudinkin): Disabled until scala-pickling-0.11.* arrives
-      //
+    import scala.pickling.pickler._
 
-      import sbt.serialization.pickler.OptionPicklers
-      import scala.pickling.pickler.PrimitivePicklers
+    object Picklers extends PrimitivePicklers {
 
-      object Picklers extends PrimitivePicklers with OptionPicklers {
+      import org.apache.spark.mllib.tree.configuration.{Algo, FeatureType}
 
-        import scala.pickling.{AbstractPicklerUnpickler => _, _}
-        import Defaults._
+      implicit val algoPickler = new AbstractPicklerUnpickler[Algo.Algo] {
+        import scala.pickling.{PBuilder, PReader}
 
-        //implicit val eitherPickler = Pickler.generate[AppInstanceConfig.Model]
+        override def tag = FastTypeTag[Algo.Algo]
 
-        //
-        // NB:
-        //  That's a hack to overcome SI-9306 (https://issues.scala-lang.org/browse/SI-9306)
-        //
+        override def pickle(picklee: Algo.Algo, builder: PBuilder): Unit = {
+          builder.beginEntry(picklee, tag)
 
-        val stringOptPickler = optionPickler[String]
+          builder.putField("algo", { fb =>
+            putInto(picklee match {
+              case Algo.Classification  => "classification"
+              case Algo.Regression      => "regression"
+            }, fb)
+          })
 
-        val statsPickler      = optionPickler(FastTypeTag[InformationGainStats], implicitly[Pickler[InformationGainStats]], implicitly[Unpickler[InformationGainStats]], FastTypeTag[Option[InformationGainStats]])
-
-        val predictPickler    = implicitly[Pickler[Predict]]
-        val predictUnpickler  = implicitly[Unpickler[Predict]]
-
-
-        implicit val featureTypePickler = new AbstractPicklerUnpickler[FeatureType.FeatureType] {
-          override def tag = FastTypeTag[FeatureType]
-
-          override def pickle(picklee: FeatureType, builder: PBuilder): Unit = {
-            builder.hintTag(tag)
-            builder.beginEntry(picklee)
-
-            builder.putField("featureType", { fb =>
-              putInto(picklee match {
-                case FeatureType.Categorical  => "categorical"
-                case FeatureType.Continuous   => "continuous"
-              }, fb)
-            })
-
-            builder.endEntry()
-          }
-
-          override def unpickle(tag: String, reader: PReader): Any = {
-            stringPickler.unpickleEntry(reader.readField("featureType")).asInstanceOf[String] match {
-              case "categorical"  => FeatureType.Categorical
-              case "continuous"   => FeatureType.Continuous
-            }
-          }
+          builder.endEntry()
         }
 
-
-        implicit val splitPickler = new AbstractPicklerUnpickler[Split] {
-          override def tag = FastTypeTag[Split]
-
-          implicit val listDoublePickler    = implicitly[Pickler[List[Double]]]
-          implicit val listDoubleUnpickler  = implicitly[Unpickler[List[Double]]]
-
-          override def pickle(picklee: Split, builder: PBuilder): Unit = {
-            builder.hintTag(tag)
-            builder.beginEntry(picklee)
-
-            builder.putField("feature", { fb =>
-              putInto(picklee.feature, fb)
-            })
-
-            builder.putField("threshold", { fb =>
-              putInto(picklee.threshold, fb)
-            })
-
-            builder.putField("featureType", { fb =>
-              putInto(picklee.featureType, fb)
-            })
-
-            builder.putField("categories", { fb =>
-              putInto(picklee.categories, fb)
-            })
-
-            builder.endEntry()
-          }
-
-          override def unpickle(tag: String, reader: PReader): Any = {
-            val feature   = intPickler.unpickleEntry(reader.readField("feature")).asInstanceOf[Int]
-            val threshold = doublePickler.unpickleEntry(reader.readField("threshold")).asInstanceOf[Double]
-            val featureType = featureTypePickler.unpickleEntry(reader.readField("featureType")).asInstanceOf[FeatureType.FeatureType]
-            val categories = listDoubleUnpickler.unpickleEntry(reader.readField("categories")).asInstanceOf[List[Double]]
-
-            new Split(feature, threshold, featureType, categories)
+        override def unpickle(tag: String, reader: PReader): Any = {
+          stringPickler.unpickleEntry(reader.readField("algo")).asInstanceOf[String] match {
+            case "classification" => Algo.Classification
+            case "regression"     => Algo.Regression
           }
         }
-
-        val splitOptPickler = optionPickler(FastTypeTag[Split], splitPickler, splitPickler, FastTypeTag[Option[Split]])
-
-        implicit val decisionTreeNodePickler = new AbstractPicklerUnpickler[org.apache.spark.mllib.tree.model.Node] {
-
-          import org.apache.spark.mllib.tree.model.{InformationGainStats, Node, Predict, Split}
-
-          val selfPickler: Pickler[Option[Node]] with Unpickler[Option[Node]] = optionPickler(tag, this, this, optTag)
-
-          override  def tag     = FastTypeTag[Node]
-                    def optTag  = FastTypeTag[Option[Node]]
-
-          override def pickle(picklee: Node, builder: PBuilder): Unit = {
-            builder.hintTag(tag)
-            builder.beginEntry(picklee)
-
-            println(s"WOWO -BEGIN: ${picklee.id}")
-
-            builder.putField("id", { fb =>
-              putInto(picklee.id, fb)
-            })
-
-            builder.putField("predict", { fb =>
-              putInto(picklee.predict, fb)
-            })
-
-            builder.putField("impurity", { fb =>
-              putInto(picklee.impurity, fb)
-            })
-
-            builder.putField("isLeaf", { fb =>
-              putInto(picklee.isLeaf, fb)
-            })
-
-            builder.putField("split", { fb =>
-              putInto(picklee.split, fb)
-            })
-
-            builder.putField("leftNode", { fb =>
-              putInto(picklee.leftNode, fb)(selfPickler)
-            })
-
-            builder.putField("rightNode", { fb =>
-              putInto(picklee.rightNode, fb)(selfPickler)
-            })
-
-            builder.putField("stats", { fb =>
-              putInto(picklee.stats, fb)
-            })
-
-            builder.endEntry()
-          }
-
-          override def unpickle(tag: String, reader: PReader): Any = {
-            val id        = intPickler        .unpickleEntry(reader.readField("id"))        .asInstanceOf[Int]
-            val predict   = predictUnpickler  .unpickleEntry(reader.readField("predict"))   .asInstanceOf[Predict]
-            val impurity  = doublePickler     .unpickleEntry(reader.readField("impurity"))  .asInstanceOf[Double]
-            val isLeaf    = booleanPickler    .unpickleEntry(reader.readField("isLeaf"))    .asInstanceOf[Boolean]
-            val split     = splitOptPickler   .unpickleEntry(reader.readField("split"))     .asInstanceOf[Option[Split]]
-            val leftNode  = selfPickler       .unpickleEntry(reader.readField("leftNode"))  .asInstanceOf[Option[Node]]
-            val rightNode = selfPickler       .unpickleEntry(reader.readField("rightNode")) .asInstanceOf[Option[Node]]
-            val stats     = statsPickler    .unpickleEntry(reader.readField("stats"))     .asInstanceOf[Option[InformationGainStats]]
-
-            println(s"WOWO -END: ${id}")
-
-            new Node(id, predict, impurity, isLeaf, split, leftNode, rightNode, stats)
-          }
-        }
-
-        implicit val classificatorPickler = Pickler.generate[SparkDecisionTreeClassificationModel]
-
-
-        implicit val decisionTreePickler = new AbstractPicklerUnpickler[DecisionTreeModel] {
-          override def tag = FastTypeTag[DecisionTreeModel]
-
-          val algoPickler = implicitly[Pickler[Algo.Algo]]
-          val algoUnpickler = implicitly[Unpickler[Algo.Algo]]
-
-          override def pickle(picklee: DecisionTreeModel, builder: PBuilder): Unit = {
-            builder.hintTag(tag)
-            builder.beginEntry(picklee)
-
-            builder.putField("topNode", { fb =>
-              putInto(picklee.topNode, fb)
-            })
-
-            builder.putField("algo", { fb =>
-              putInto(picklee.algo, fb)
-            })
-
-            builder.endEntry()
-          }
-
-          override def unpickle(tag: String, reader: PReader): Any = {
-            val topNode = decisionTreeNodePickler.unpickleEntry(reader.readField("topNode")).asInstanceOf[org.apache.spark.mllib.tree.model.Node]
-            val algo = algoUnpickler.unpickleEntry(reader.readField("algo")).asInstanceOf[Algo.Algo]
-
-            new DecisionTreeModel(topNode, algo)
-          }
-        }
-
-        //
-        // TODO(kudinkin): report `pickling` being unable to properly diagnose covariant-type
-        //
-        implicit val regressorPickler = new AbstractPicklerUnpickler[SparkDecisionTreeRegressionModel] {
-
-          override def tag = FastTypeTag[SparkDecisionTreeRegressionModel]
-
-          override def pickle(picklee: SparkDecisionTreeRegressionModel, builder: PBuilder): Unit = {
-            builder.hintTag(tag)
-            builder.beginEntry(picklee)
-
-            builder.putField("model", { fb =>
-              fb.hintTag(decisionTreePickler.tag)
-              decisionTreePickler.pickle(picklee.model, fb)
-            })
-
-            builder.endEntry()
-          }
-
-          override def unpickle(tag: String, reader: PReader): Any = {
-            val model = decisionTreePickler.unpickleEntry(reader.readField("model")).asInstanceOf[DecisionTreeModel]
-            println(s"BOWOW: ${model}")
-            SparkDecisionTreeRegressionModel(model)
-          }
-        }
-
       }
 
-      import Picklers._
+      implicit val featureTypePickler = new AbstractPicklerUnpickler[FeatureType.FeatureType] {
+        import scala.pickling.{PBuilder, PReader}
 
-      import scala.pickling._
-      import Defaults._
-      import json._
+        override def tag = FastTypeTag[FeatureType.FeatureType]
 
-      override def write(model: AppInstanceConfig.Model): BSONString =
-        BSONString(
-          model match {
-            case Left(e)  => e.asInstanceOf[SparkDecisionTreeClassificationModel].pickle(json.pickleFormat, classificatorPickler).value
-            case Right(e) => e.asInstanceOf[SparkDecisionTreeRegressionModel]    .pickle(json.pickleFormat, regressorPickler).value
-          }
-        )
+        override def pickle(picklee: FeatureType.FeatureType, builder: PBuilder): Unit = {
+          builder.beginEntry(picklee, tag)
 
+          builder.putField("featureType", { fb =>
+            putInto(picklee match {
+              case FeatureType.Categorical  => "categorical"
+              case FeatureType.Continuous   => "continuous"
+            }, fb)
+          })
 
-      override def read(bson: BSONString): AppInstanceConfig.Model = {
-        // _DBG
-        println(s"YOYOYO: ${m}")
-
-        val up = Unpickler.generate[PickleableModel]
-
-        val x = bson.value.unpickle[PickleableModel](up, json.pickleFormat) match {
-          case c @ SparkDecisionTreeClassificationModel(_)  => Left(c)
-          case r @ SparkDecisionTreeRegressionModel(_)      => Right(r)
-          case x =>
-
-            // _DBG
-            println(s"YOYOYOY[2]: ${x}")
-
-            throw new UnsupportedOperationException()
+          builder.endEntry()
         }
 
-        println(s"YOYOYO[3]: ${x}")
-        x
+        override def unpickle(tag: String, reader: PReader): Any = {
+          stringPickler.unpickleEntry(reader.readField("featureType")).asInstanceOf[String] match {
+            case "categorical"  => FeatureType.Categorical
+            case "continuous"   => FeatureType.Continuous
+          }
+        }
+      }
     }
+
+
+    import Picklers.{featureTypePickler, algoPickler}
+
+    implicit val binaryBSONSerializer =
+      new BSONReader[BSONBinary, AppInstanceConfig.Model] with BSONWriter[AppInstanceConfig.Model, BSONBinary] {
+
+        import scala.pickling._
+        import Defaults._
+        import binary._
+
+        override def write(model: AppInstanceConfig.Model): BSONBinary =
+          BSONBinary(
+            model match {
+              case Left(e)  => e.asInstanceOf[SparkDecisionTreeClassificationModel].pickle.value
+              case Right(e) => e.asInstanceOf[SparkDecisionTreeRegressionModel].pickle.value
+            },
+            Subtype.UserDefinedSubtype
+          )
+
+        override def read(bson: BSONBinary): AppInstanceConfig.Model =
+          bson.byteArray.unpickle[PickleableModel] match {
+            case c @ SparkDecisionTreeClassificationModel(_)  => Left(c)
+            case r @ SparkDecisionTreeRegressionModel(_)      => Right(r)
+            case x =>
+              throw new UnsupportedOperationException()
+          }
+      }
+
+    implicit val jsonBSONSerializer =
+        new BSONReader[BSONString, AppInstanceConfig.Model] with BSONWriter[AppInstanceConfig.Model, BSONString] {
+
+        import scala.pickling._
+        import Defaults._
+        import json._
+
+        override def write(model: AppInstanceConfig.Model): BSONString =
+          BSONString(
+            model match {
+              case Left(e)  => e.asInstanceOf[SparkDecisionTreeClassificationModel].pickle.value
+              case Right(e) => e.asInstanceOf[SparkDecisionTreeRegressionModel].pickle.value
+            }
+          )
+
+        override def read(bson: BSONString): AppInstanceConfig.Model =
+          bson.value.unpickle[PickleableModel] match {
+            case c @ SparkDecisionTreeClassificationModel(_)  => Left(c)
+            case r @ SparkDecisionTreeRegressionModel(_)      => Right(r)
+            case x =>
+              throw new UnsupportedOperationException()
+          }
+      }
   }
+
+  import Model.binaryBSONSerializer
 
 
   //
@@ -565,7 +422,7 @@ object Storage extends reactivemongo.bson.DefaultBSONHandlers {
       }
     }
 
-  implicit val appInstanceConfigRecordBSON =
+  implicit val appInstanceConfigRecordBSONSerializer =
     new Persister[AppInstanceConfig.Record] {
       import AppInstanceConfig.Record._
       val collection: String = "appconfig"

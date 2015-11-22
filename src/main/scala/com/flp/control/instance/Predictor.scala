@@ -6,6 +6,7 @@ import org.apache.spark.mllib.tree.model.DecisionTreeModel
 import org.apache.spark.rdd.RDD
 
 import scala.language.reflectiveCalls
+import scala.pickling.directSubclasses
 import scala.util.Random
 
 
@@ -152,23 +153,26 @@ object RegressionModel {
 }
 
 
-trait RegressionModel {
+sealed trait RegressionModel {
   def predict(vector: Seq[Double]): Double
 }
 
-trait ClassificationModel {
+sealed trait ClassificationModel {
   def predict(vector: Seq[Double]): Int
 }
 
-trait SparkModel[+T <: SparkModel.Model] {
+sealed trait SparkModel[+T <: SparkModel.Model] {
   val model: T
 }
+
+@directSubclasses(Array(classOf[SparkDecisionTreeRegressionModel], classOf[SparkDecisionTreeClassificationModel]))
+sealed trait PickleableModel
 
 object SparkModel {
 
   //
   // - Hey, Joe, do you love ducks?
-  // - Quack-quack
+  // - Quack-quack!
   //
 
   type Model = {
@@ -176,7 +180,6 @@ object SparkModel {
     def predict(features: RDD[Vector]): RDD[Double]
   }
 }
-
 
 class SparkRegressionModel[+T <: SparkModel.Model](override val model: T) extends RegressionModel
                                                                           with    SparkModel[T] {
@@ -190,6 +193,8 @@ class SparkRegressionModel[+T <: SparkModel.Model](override val model: T) extend
 
 final case class SparkDecisionTreeRegressionModel(override val model: DecisionTreeModel)
   extends SparkRegressionModel[DecisionTreeModel](model)
+  with    PickleableModel
+
 
 class SparkClassificationModel[+T <: SparkModel.Model](override val model: T) extends ClassificationModel
                                                                               with    SparkModel[T] {
@@ -203,6 +208,7 @@ class SparkClassificationModel[+T <: SparkModel.Model](override val model: T) ex
 
 final case class SparkDecisionTreeClassificationModel(override val model: DecisionTreeModel)
   extends SparkClassificationModel[DecisionTreeModel](model)
+  with    PickleableModel
 
 // predicted labels are +1 or -1 for GBT.
 //class SparkRandomForestRegressionModel(override val model: RandomForestModel)
