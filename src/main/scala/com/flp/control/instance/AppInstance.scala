@@ -65,7 +65,7 @@ class AppInstanceActor(val appId: String) extends ExecutingActor {
             .map {
               case TrainRegressorResponse(model, error) =>
 
-                import Storage.{appInstanceConfigBSON, appInstanceConfigRecordBSON}
+                import Storage.{appInstanceConfigBSONSerializer, appInstanceConfigRecordBSONSerializer}
 
                 ask[UpdateResponse](this.storage(), Update[AppInstanceConfig.Record](appId) {
                   AppInstanceConfig.Record.`config` ->

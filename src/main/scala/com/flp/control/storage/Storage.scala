@@ -397,7 +397,7 @@ object Storage extends reactivemongo.bson.DefaultBSONHandlers {
   // TODO(kudinkin): Merge
   //
 
-  implicit val appInstanceConfigBSON =
+  implicit val appInstanceConfigBSONSerializer =
     new BSONDocumentReader[AppInstanceConfig] with BSONDocumentWriter[AppInstanceConfig] {
       import AppInstanceConfig._
 
