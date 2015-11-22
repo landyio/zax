@@ -341,7 +341,7 @@ object AppInstanceStatus {
 case class AppInstanceConfig(
   variations:           Seq[Variation],
   userDataDescriptors:  Seq[UserDataDescriptor],
-  model:                AppInstanceConfig.Model
+  model:                Option[AppInstanceConfig.Model]
 )
 
 
@@ -351,7 +351,7 @@ object AppInstanceConfig {
   type ClassificationModel  = SparkClassificationModel[_ <: SparkModel.Model]
   type RegressionModel      = SparkRegressionModel[_ <: SparkModel.Model]
 
-  type Model = Option[Either[ClassificationModel, RegressionModel]]
+  type Model = Either[ClassificationModel, RegressionModel]
 
   val `variations`  = "variations"
   val `descriptors` = "descriptors"

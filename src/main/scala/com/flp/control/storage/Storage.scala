@@ -2,12 +2,13 @@ package com.flp.control.storage
 
 import akka.pattern.pipe
 import com.flp.control.akka.ExecutingActor
+import com.flp.control.instance.AppInstanceConfig._
 import com.flp.control.instance._
 import com.flp.control.model._
 import com.typesafe.config.{Config, ConfigFactory}
-import org.apache.spark.mllib.tree.model.DecisionTreeModel
 
 import scala.language.implicitConversions
+import scala.util.Failure
 
 class StorageActor extends ExecutingActor {
 
@@ -271,26 +272,30 @@ object Storage extends reactivemongo.bson.DefaultBSONHandlers {
       import Defaults._
       import json._
 
-      //implicit val eitherPickler = Pickler.generate[AppInstanceConfig.Model]
+      override def write(model: AppInstanceConfig.Model): BSONString = {
+        implicit val classificatorPickler = implicitly[Pickler[SparkDecisionTreeClassificationModel]]
+        implicit val regressorPickler     = implicitly[Pickler[SparkDecisionTreeRegressionModel]]
 
-      override def write(model: AppInstanceConfig.Model): BSONString =
         BSONString(
-          model.flatMap {
-            case Left(e)  => Some(e.asInstanceOf[SparkDecisionTreeClassificationModel].pickle)
-            case Right(e) => Some(e.asInstanceOf[SparkDecisionTreeRegressionModel].pickle)
-          }.pickle.value
+          model match {
+            case Left(e)  => e.asInstanceOf[SparkDecisionTreeClassificationModel].pickle.value
+            case Right(e) => e.asInstanceOf[SparkDecisionTreeRegressionModel].pickle.value
+          }
         )
+      }
 
-      override def read(bson: BSONString): AppInstanceConfig.Model =
-        bson.value.unpickle[Option[String]].map {
-          case m =>
-            m .unpickle[SparkModel[DecisionTreeModel]] match {
-              case c @ SparkDecisionTreeClassificationModel(_)  => Left(c)
-              case r @ SparkDecisionTreeRegressionModel(_)      => Right(r)
-              case _ =>
-                throw new UnsupportedOperationException()
-            }
+      override def read(bson: BSONString): AppInstanceConfig.Model = {
+        implicit val classificatorUnpickler = implicitly[Unpickler[SparkDecisionTreeClassificationModel]]
+        implicit val regressorUnpickler     = implicitly[Unpickler[SparkDecisionTreeRegressionModel]]
+
+        val m = bson.value.unpickle[PickleableModel] match {
+          case c @ SparkDecisionTreeClassificationModel(_)  => Left(c)
+          case r @ SparkDecisionTreeRegressionModel(_)      => Right(r)
+          case _ =>
+            throw new UnsupportedOperationException()
         }
+        m
+      }
     }
 
 
@@ -313,12 +318,11 @@ object Storage extends reactivemongo.bson.DefaultBSONHandlers {
       override def read(bson: BSONDocument): AppInstanceConfig = {
         { for (
             vs    <- bson.getAs[Seq[Variation]]           (`variations`);
-            ds    <- bson.getAs[Seq[UserDataDescriptor]]  (`descriptors`);
-            model <- bson.getAs[AppInstanceConfig.Model]  (`model`)
+            ds    <- bson.getAs[Seq[UserDataDescriptor]]  (`descriptors`)
           ) yield AppInstanceConfig(
               variations          = vs.toList,
               userDataDescriptors = ds.toList,
-              model               = model
+              model               = bson.getAs[AppInstanceConfig.Model](`model`)
             )
         }.get // getOrElse AppInstanceConfig.empty
       }
