@@ -285,7 +285,7 @@ object Storage extends reactivemongo.bson.DefaultBSONHandlers {
       import org.apache.spark.mllib.tree.configuration.{Algo, FeatureType}
 
       implicit val algoPickler = new AbstractPicklerUnpickler[Algo.Algo] {
-        import scala.pickling.{PBuilder, PReader}
+        import scala.pickling.{FastTypeTag, PBuilder, PReader}
 
         override def tag = FastTypeTag[Algo.Algo]
 
@@ -311,7 +311,7 @@ object Storage extends reactivemongo.bson.DefaultBSONHandlers {
       }
 
       implicit val featureTypePickler = new AbstractPicklerUnpickler[FeatureType.FeatureType] {
-        import scala.pickling.{PBuilder, PReader}
+        import scala.pickling.{FastTypeTag, PBuilder, PReader}
 
         override def tag = FastTypeTag[FeatureType.FeatureType]
 
