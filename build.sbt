@@ -20,7 +20,7 @@ lazy val common = Seq(
   scalaVersion      := "2.11.7",
   autoScalaLibrary  := false,
 
-  scalacOptions     := Seq("-target:jvm-1.8")
+  scalacOptions     := Seq("-target:jvm-1.7")
                     ++ Seq("-encoding", "utf8")
                     ++ Seq("-unchecked", "-deprecation", "-feature")
                     ++ Seq("-optimise")
