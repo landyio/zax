@@ -1,7 +1,8 @@
 
 var http = require('http');
 
-function request(method, path, port, data, verbose) {
+
+function request(method, path, port, data, succCallback, verbose) {
 
   var options = {
     hostname: 'localhost',
@@ -33,25 +34,30 @@ function request(method, path, port, data, verbose) {
       if (verbose)
         console.log("[RECV]: ", chunk);
     });
+
+    r.on('end', function () {
+      succCallback();
+    })
   });
 }
 
 exports.post = function post(path, port, data, verbose) {
-
   var data = JSON.stringify(data);
 
-  var req = request('POST', path, port, data, verbose);
+  return new Promise(function (succCallback) {
+    var req = request('POST', path, port, data, succCallback, verbose);
 
-  // _DBG
-  console.log("[SENT]: ", data);
+    // _DBG
+    console.log("[SENT]: ", data);
 
-  req.write(data);
-  req.end();
+    req.write(data);
+    req.end();
+  });
 }
 
 
 exports.get = function get(path, port, data, verbose) {
-
-  request('GET', path, port, data, verbose).end();
-
+  return new Promise(function (succCallback) {
+    request('GET', path, port, data, verbose).end();
+  });
 }

@@ -2,7 +2,7 @@
 var http = require('./http.js');
 var gen = require('./gen.js');
 
-var sleep = require('sleep');
+var sleep = require('sleep')
 
 
 function submit(session, ts, visitor, vars, targetVar, appId) {
@@ -13,7 +13,11 @@ function submit(session, ts, visitor, vars, targetVar, appId) {
   // #2
   // 
 
+  // _DBG
+  console.log("OLOLOL: ");
+
   var port = '8080';
+  var verbose = true;
 
   var vid = gen.randomInt(vars.length);
 
@@ -24,7 +28,8 @@ function submit(session, ts, visitor, vars, targetVar, appId) {
     variation:  vars[vid]
   };
 
-  http.post('/app/' + appId + '/event/start', port, start);
+
+  var ps = http.post('/app/' + appId + '/event/start', port, start, verbose);
 
   if (vid === targetVar) 
   {
@@ -33,31 +38,39 @@ function submit(session, ts, visitor, vars, targetVar, appId) {
       timestamp:  ts
     };
 
-    http.post('/app/' + appId + '/event/finish', port, finish);
+    var pf = http.post('/app/' + appId + '/event/finish', port, finish, verbose);
+
+    return Promise.all([ ps, pf ]);
   }
+
+  return ps;
 }
 
 (function main() {
   'use strict';
 
   // Step #0: Sweep
-
-  // clearDB();
   
-
-  // Step #1: Push app-conf
-
   var appId = "1";
 
   var variations = [ "1", "2" ];
 
-  var appconf = {
-    variations:  variations,
-    descriptors: [ "browser", "os", "lang" ]
-  }
+  // Step #1: Push app-conf
 
-  http.post('/app/' + appId + '/control/create', '8081', appconf);
- 
+  function step_1() {
+
+    console.log("========================================================")
+    console.log("Step #1")
+    console.log("========================================================")
+    
+    var appconf = {
+      variations:  variations,
+      descriptors: [ "browser", "os", "lang" ]
+    }
+
+    return http.post('/app/' + appId + '/control/create', '8081', appconf, true);
+
+  }
 
   // Step #2: Push events
 
@@ -78,39 +91,84 @@ function submit(session, ts, visitor, vars, targetVar, appId) {
     os:       [ 8, 1, 70, 20 ],
     lang:     [ 5, 5, 7, 60 ]
   }
+    
+  var N = 5;
+  var M = 1;
 
-  var N = 10;
+  
+  function step_2() {
 
-  var sampleA = gen.generate(props, weightsA, N);
-  var sampleB = gen.generate(props, weightsB, N);
+    sleep.sleep(2);
 
-  var sid = 0;
-  var ts = 0; 
+    console.log("========================================================")
+    console.log("Step #2")
+    console.log("========================================================")
 
-  sampleA.forEach(function (visitor) {
-    submit(sid++, ts++, visitor, variations, 0 /* targetVar */, appId);
-  });
+    var sampleA = gen.generate(props, weightsA, N);
+    var sampleB = gen.generate(props, weightsB, N);
 
-  sampleB.forEach(function (visitor) {
-    submit(sid++, ts++, visitor, variations, 1 /* targetVar */, appId);
-  });
+    var sid = 0;
+    var ts = 0; 
 
+    var ps = [];
+
+    sampleA.forEach(function (visitor) {
+      ps.push(
+        submit(sid++, ts++, visitor, variations, 0 /* targetVar */, appId)
+      );
+    });
+
+    sampleB.forEach(function (visitor) {
+      ps.push(
+        submit(sid++, ts++, visitor, variations, 1 /* targetVar */, appId)
+      );
+    });
+
+    return Promise.all(ps);
+  }
 
   // Step #3: Query prediction
 
-  sleep.sleep(2);
+  function step_3() {
 
-  var testSample = gen.generate(props, weightsB, N);
+    sleep.sleep(2);
 
-  testSample.forEach(function (visitor) {
+    console.log("========================================================")
+    console.log("Step #3")
+    console.log("========================================================")
 
-    http.post('/app/' + appId + '/event/predict', '8080', { identity: visitor }, true /* verbose */);
+    var testSample = gen.generate(props, weightsB, M);
 
-  });
+    var ps = [];
 
+    testSample.forEach(function (visitor) {
+
+      ps.push(
+        http.post('/app/' + appId + '/event/predict', '8080', { identity: visitor }, true /* verbose */)
+      );
+
+    });
+
+    return Promise.all(ps);
+  }
 
   // Step #4: Trigger training
 
+  function step_4() {
+
+    // ...    
+
+  }
+
+  // ...
+
+  step_1().then(function () {
+    step_2().then(function () {
+      step_3().then(function () {
+        // #4
+      })
+    })
+  });
 
 })();
 
