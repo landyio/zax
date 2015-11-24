@@ -55,9 +55,6 @@ class SparkDriverActor(private val sc: SparkContext) extends ExecutingActor {
 
     val error = evaluate(model, test)
 
-    // TODO(kudinkin): that's due to pickling being unable generate unpickler for structural-type
-    // Future { (new SparkClassificationModel(model), error) }
-
     Future { Commands.TrainClassifierResponse(new SparkDecisionTreeClassificationModel(model), error) }
   }
 
@@ -82,9 +79,6 @@ class SparkDriverActor(private val sc: SparkContext) extends ExecutingActor {
 
     log.info( s"Finished training regressor (${model.getClass.getName});\n" +
               s"Error: ${error}\n")
-
-    // TODO(kudinkin): that's due to pickling being unable generate unpickler for structural-type
-    // Future { (new SparkRegressionModel(model), error) }
 
     Future { TrainRegressorResponse(new SparkDecisionTreeRegressionModel(model), error) }
   }
