@@ -13,9 +13,6 @@ function submit(session, ts, visitor, vars, targetVar, appId) {
   // #2
   // 
 
-  // _DBG
-  console.log("OLOLOL: ");
-
   var port = '8080';
   var verbose = true;
 
@@ -92,8 +89,8 @@ function submit(session, ts, visitor, vars, targetVar, appId) {
     lang:     [ 5, 5, 7, 60 ]
   }
     
-  var N = 5;
-  var M = 1;
+  var N = 500;
+  var M = 10;
 
   
   function step_2() {
