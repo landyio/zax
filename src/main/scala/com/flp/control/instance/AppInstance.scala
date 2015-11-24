@@ -130,26 +130,30 @@ class AppInstanceActor(val appId: String) extends ExecutingActor {
   /**
     * Returns current app-instance getStatus
     **/
-  private def getStatus: Future[AppInstanceStatus] = {
+  private def getStatus(from: Epoch = 0l): Future[AppInstanceStatus] = {
 
-    import com.flp.control.storage.Storage.Commands.{Count, CountResponse}
+    import Storage.Commands.{Count, CountResponse}
 
     val state   = this.runState
     val storage = this.storage()
+
+    import reactivemongo.bson.BSONDocument
 
     for {
 
       eventsAllStart <-
         ask(storage, Count[StartEvent](
-          Event.`appId` -> appId,
-          Event.`type`  -> Event.`type:Start`
+          Event.`appId`     -> appId,
+          Event.`type`      -> Event.`type:Start`,
+          Event.`timestamp` -> BSONDocument("$gt" -> from.ts)
         )).mapTo[CountResponse]
           .map(_.count)
 
       eventsAllFinish <-
         ask(storage, Count[FinishEvent](
-          Event.`appId` -> appId,
-          Event.`type`  -> Event.`type:Finish`
+          Event.`appId`     -> appId,
+          Event.`type`      -> Event.`type:Finish`,
+          Event.`timestamp` -> BSONDocument("$gt" -> from.ts)
         )).mapTo[CountResponse]
           .map(x => x.count)
 
@@ -276,7 +280,7 @@ class AppInstanceActor(val appId: String) extends ExecutingActor {
   //
 
   private def stop(): Future[AppInstanceStatus] =
-    switchState(State.Suspended).flatMap { _ => getStatus }
+    switchState(State.Suspended).flatMap { _ => getStatus() }
 
   override def receive: Receive = trace {
 
@@ -290,7 +294,7 @@ class AppInstanceActor(val appId: String) extends ExecutingActor {
     }
 
     case Commands.StatusRequest() => runState is Any then {
-      getStatus pipeTo sender()
+      getStatus() pipeTo sender()
     }
 
     case Commands.ConfigRequest() => runState is Any then {
@@ -339,15 +343,18 @@ class AppInstanceActor(val appId: String) extends ExecutingActor {
 }
 
 case class AppInstanceStatus(
-  runState: AppInstance.State = AppInstance.State.NoData,
-  eventsAllStart    : Int = 0,
-  eventsAllFinish   : Int = 0,
-  eventsLearnStart  : Int = 0,
-  eventsLearnFinish : Int = 0
+  runState: AppInstance.State,
+  eventsAllStart    : Int,
+  eventsAllFinish   : Int
 )
 
 object AppInstanceStatus {
-  val empty: AppInstanceStatus = AppInstanceStatus()
+  val empty: AppInstanceStatus =
+    AppInstanceStatus(
+      runState          = AppInstance.State.NoData,
+      eventsAllStart    = 0,
+      eventsAllFinish   = 0
+    )
 }
 
 /**

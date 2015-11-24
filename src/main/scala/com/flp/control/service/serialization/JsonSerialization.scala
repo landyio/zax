@@ -81,12 +81,7 @@ trait JsonSerialization extends DefaultJsonProtocol with SprayJsonSupport {
           "all" -> JsObject(
             "start" -> JsNumber(status.eventsAllStart),
             "finish" -> JsNumber(status.eventsAllFinish)
-          ),
-          "learn" -> JsObject(
-            "start" -> JsNumber(status.eventsLearnStart),
-            "finish" -> JsNumber(status.eventsLearnFinish)
           )
-
         )
       )
 
