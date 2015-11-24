@@ -33,17 +33,19 @@ object State {
   case class StateDispatcher[S](current: S) {
     type Value = Either[S, Any.type]
 
-    case class MultiplexingMatcher[S](allowedStates: Seq[S]) extends Matcher[S] {
+    case class MultiplexingMatcher(allowedStates: Seq[S], pred: (S, Seq[S]) => Boolean) extends Matcher[S] {
       def or(state: S): Matcher[S] =
-        MultiplexingMatcher(allowedStates :+ state)
+        MultiplexingMatcher(allowedStates :+ state, pred)
 
       def then[R](run: => R) = {
-        if (allowedStates.contains(current)) run
+        if (pred(current, allowedStates)) run
       }
     }
 
-    def is(state: Any.type)  = AnyMatcher()
-    def is(state: S)              = MultiplexingMatcher(Seq(state))
+    def is(state: Any.type) = AnyMatcher()
+    def is(state: S)        = MultiplexingMatcher(Seq(state), (s, allowed) => { allowed.contains(s) })
+
+    def except(state: S)    = MultiplexingMatcher(Seq(state), (s, disallowed) => { !disallowed.contains(s) })
   }
 
   implicit def respondIf[S](state: S): StateDispatcher[S] =

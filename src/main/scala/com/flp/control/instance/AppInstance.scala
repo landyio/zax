@@ -307,8 +307,8 @@ class AppInstanceActor(val appId: String) extends ExecutingActor {
       sender  ! Commands.PredictResponse(predict(uid))
     }
 
-    case Commands.TrainRequest() => runState is State.NoData      or
-                                                State.Predicting  then {
+    case Commands.TrainRequest() => runState except State.Suspended or
+                                                    State.Training  then {
 
       assert(runState != State.Suspended || runState != State.Training)
 
