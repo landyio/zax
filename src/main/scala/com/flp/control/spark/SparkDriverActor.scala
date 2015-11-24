@@ -3,6 +3,7 @@ package com.flp.control.spark
 import akka.pattern.pipe
 import com.flp.control.akka.ExecutingActor
 import com.flp.control.instance._
+import com.flp.control.spark.SparkDriverActor.Commands.TrainRegressorResponse
 import org.apache.spark.SparkContext
 import org.apache.spark.mllib.linalg.DenseVector
 import org.apache.spark.mllib.regression.LabeledPoint
@@ -37,7 +38,7 @@ class SparkDriverActor(private val sc: SparkContext) extends ExecutingActor {
       case Array(a: T, b: T) => (a, b)
     }
 
-  private def trainClassifier(sample: Seq[(Seq[Double], Double)]): Future[(ClassificationModel, Double)] = {
+  private def trainClassifier(sample: Seq[(Seq[Double], Double)]): Future[Commands.TrainClassifierResponse] = {
 
     // TODO(kudinkin): Extract
 
@@ -57,11 +58,11 @@ class SparkDriverActor(private val sc: SparkContext) extends ExecutingActor {
     // TODO(kudinkin): that's due to pickling being unable generate unpickler for structural-type
     // Future { (new SparkClassificationModel(model), error) }
 
-    Future { (new SparkDecisionTreeClassificationModel(model), error) }
+    Future { Commands.TrainClassifierResponse(new SparkDecisionTreeClassificationModel(model), error) }
   }
 
 
-  def trainRegressor(sample: Seq[(Seq[Double], Double)]): Future[(RegressionModel, Double)] = {
+  def trainRegressor(sample: Seq[(Seq[Double], Double)]): Future[TrainRegressorResponse] = {
 
     // TODO(kudinkin): Extract
 
@@ -85,7 +86,7 @@ class SparkDriverActor(private val sc: SparkContext) extends ExecutingActor {
     // TODO(kudinkin): that's due to pickling being unable generate unpickler for structural-type
     // Future { (new SparkRegressionModel(model), error) }
 
-    Future { (new SparkDecisionTreeRegressionModel(model), error) }
+    Future { TrainRegressorResponse(new SparkDecisionTreeRegressionModel(model), error) }
   }
 
   override def receive: Receive = trace {
