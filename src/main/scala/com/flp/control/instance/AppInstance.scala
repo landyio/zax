@@ -40,10 +40,12 @@ class AppInstanceActor(val appId: String) extends ExecutingActor {
     **/
   private def predict(identity: UserIdentity): Variation =
     predictor
-      .map        { p => p.predictFor(identity) }
-      .getOrElse  { Variation.sentinel }
+      .map { p => p.predictFor(identity) }
+      .getOrElse {
+        Variation.sentinel
+      }
 
-  /**
+  /**                                 k
     * Checks whether current app-state allows it to have model
     * trained
     *
@@ -247,8 +249,6 @@ class AppInstanceActor(val appId: String) extends ExecutingActor {
     val storage = this.storage()
 
     def coalesce(es: Event*): ((UserIdentity, Variation), Goal#Type) = {
-      println("XOXO: ", es)
-
       val s = es.filter { _.isInstanceOf[StartEvent] }
                 .collectFirst({ case x => x.asInstanceOf[StartEvent] })
 
