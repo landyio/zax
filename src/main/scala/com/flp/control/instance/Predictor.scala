@@ -97,7 +97,7 @@ trait Regressor extends Predictor {
       .map { case (p, (v, _)) => (p + rand()) -> v }
       .sortBy { case (p, _) => -p }
       .collectFirst { case (_, v) => v }
-      .getOrElse(Variation.sentinel)
+      .get
   }
 
   private def probability(uid: UserIdentity, variation: (Variation, Int)): Double =
