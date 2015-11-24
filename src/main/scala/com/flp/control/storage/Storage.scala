@@ -2,10 +2,12 @@ package com.flp.control.storage
 
 import akka.pattern.pipe
 import com.flp.control.akka.ExecutingActor
+import com.flp.control.instance.AppInstance.State
 import com.flp.control.instance._
 import com.flp.control.model._
 import com.typesafe.config.{Config, ConfigFactory}
 
+import scala.concurrent.Future
 import scala.language.implicitConversions
 import scala.util.Failure
 
@@ -24,6 +26,11 @@ class StorageActor extends ExecutingActor {
   private val connection: MongoConnection = driver.connection(nodes = nodes)
   private val database: DefaultDB = connection.db(name = dbname)
 
+  private def trace(f: Future[_], message: => String) =
+    f.andThen {
+      case Failure(t) => log.error(t, message)
+    }
+
   // TODO: think about why the following is not a good idea:
   // TODO: val collections = scala.collection.mutable.Map[String, BSONCollection]()
   // TODO: def find(p: Persister[_]): BSONCollection = collections.getOrElseUpdate( p.collection, database.collection[BSONCollection](p.collection) )
@@ -41,20 +48,31 @@ class StorageActor extends ExecutingActor {
                 .cursor[persister.Target](ReadPreference.Nearest(filterTag = None))
                 .collect[List](upTo, stopOnError = false)
 
-      r.map { os => Commands.LoadResponse(os) } pipeTo sender()
+      trace(
+        r.map { os =>
+          Commands.LoadResponse(os)
+        },
+        s"Failed to retrieve data from ${persister.collection} for request: ${selector}"
+      ) pipeTo sender()
 
 
     case Commands.CountRequest(persister, selector) =>
       val c = find(persister.collection)
       val r = c.count(selector = Some(selector))
 
-      r.map { o => Commands.CountResponse(o) } pipeTo sender()
+      trace(
+        r.map { o => Commands.CountResponse(o) },
+        s"Failed to retrieve data from ${persister.collection} for request: ${selector}"
+      ) pipeTo sender()
 
     case Commands.StoreRequest(persister, obj) =>
       val c = find(persister.collection)
       val r = c.insert(obj)(writer = persister, ec = executionContext)
 
-      r.map { res => Commands.StoreResponse(res.ok) } pipeTo sender()
+      trace(
+        r.map { r => Commands.StoreResponse(r.ok) },
+        s"Failed to save data in ${persister.collection} for object: ${obj}"
+      ) pipeTo sender()
 
     case Commands.UpdateRequest(persister, selector, modifier) =>
       val w = Storage.BSONDocumentIdentity
@@ -62,7 +80,10 @@ class StorageActor extends ExecutingActor {
       val c = find(persister.collection)
       val r = c.update(selector, BSONDocument("$set" -> modifier))(selectorWriter = w, updateWriter = w, ec = executionContext)
 
-      r.map { res => Commands.UpdateResponse(res.ok) } pipeTo sender()
+      trace(
+        r.map { res => Commands.UpdateResponse(res.ok) },
+        s"Failed to update data in ${persister.collection} with ${modifier} for object: ${selector}"
+      ) pipeTo sender()
 
   }
 
@@ -390,8 +411,39 @@ object Storage extends reactivemongo.bson.DefaultBSONHandlers {
       }
   }
 
-  import Model.binaryBSONSerializer
+  implicit val appInstanceStateBSONSerializer =
+    new BSONDocumentReader[AppInstance.State] with BSONDocumentWriter[AppInstance.State] {
 
+      override def write(s: State): BSONDocument =
+        s match {
+          case State.Training
+             | State.Suspended
+             | State.NoData =>
+            BSONDocument(
+              State.`name` -> s.typeName
+            )
+
+          case State.Predicting(from) =>
+            BSONDocument(
+              State.`name`            -> State.Predicting.typeName,
+              State.Predicting.`from` -> from.ts
+            )
+        }
+
+      override def read(bson: BSONDocument): State = {
+        import AppInstance.Epoch
+
+        bson.getAs[String](State.`name`).collect {
+          case State.Predicting.typeName =>
+            State.Predicting(
+              bson.getAs[Long](State.Predicting.`from`) map { ts => Epoch(ts) } getOrElse Epoch.anteChristum
+            )
+
+          case n: String =>
+            State.withName(n)
+        }.get
+      }
+    }
 
   //
   // TODO(kudinkin): Merge
@@ -400,6 +452,8 @@ object Storage extends reactivemongo.bson.DefaultBSONHandlers {
   implicit val appInstanceConfigBSONSerializer =
     new BSONDocumentReader[AppInstanceConfig] with BSONDocumentWriter[AppInstanceConfig] {
       import AppInstanceConfig._
+
+      import Model.binaryBSONSerializer
 
       override def write(c: AppInstanceConfig): BSONDocument = {
         BSONDocument(
@@ -418,7 +472,7 @@ object Storage extends reactivemongo.bson.DefaultBSONHandlers {
               userDataDescriptors = ds.toList,
               model               = bson.getAs[AppInstanceConfig.Model](`model`)
             )
-        }.get // getOrElse AppInstanceConfig.empty
+        }.get
       }
     }
 
@@ -430,16 +484,15 @@ object Storage extends reactivemongo.bson.DefaultBSONHandlers {
       override def write(t: AppInstanceConfig.Record): BSONDocument =
         BSONDocument(
           `_id`       -> BSONObjectID(t.appId),
-          `runState`  -> BSON.write(t.runState.toString),
+          `runState`  -> BSON.writeDocument(t.runState),
           `config`    -> BSON.writeDocument(t.config)
         )
 
-      override def read(bson: BSONDocument): AppInstanceConfig.Record = {
+      override def read(bson: BSONDocument): AppInstanceConfig.Record =
         AppInstanceConfig.Record(
-          appId     = bson.getAs[BSONObjectID]      (`_id`)       map { i => i.stringify } getOrElse { "" },
-          runState  = bson.getAs[String]            (`runState`)  map { s => AppInstance.State.withName(s) } getOrElse { AppInstance.State.Suspended },
+          appId     = bson.getAs[BSONObjectID]      (`_id`)      .map { i => i.stringify } getOrElse { "" },
+          runState  = bson.getAs[State]             (`runState`) .get, // .getOrElse { AppInstance.State.Suspended },
           config    = bson.getAs[AppInstanceConfig] (`config`)   .get
         )
-      }
     }
 }

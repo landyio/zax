@@ -11,6 +11,7 @@ import com.flp.control.storage.Storage
 import com.flp.control.storage.Storage.Commands.{Update, UpdateResponse}
 import com.flp.control.util.{Reflect, Identity, boolean2Int}
 
+import scala.compat.Platform
 import scala.concurrent.{Await, Future}
 import scala.util.{Failure, Success}
 
@@ -155,7 +156,7 @@ class AppInstanceActor(val appId: String) extends ExecutingActor {
 
   private def applyConfig(r: AppInstanceConfig.Record): Unit = {
     updateState(r.runState) match {
-      case State.Predicting =>
+      case State.Predicting(_) =>
         predictor = Some(Predictor(r.config))
 
       case State.Training =>
@@ -199,8 +200,10 @@ class AppInstanceActor(val appId: String) extends ExecutingActor {
     * @param state target state being switched to
     */
   private def switchState(state: State): Future[AppInstanceConfig.Record] = {
+    import Storage._
+
     ask[UpdateResponse](this.storage(), Update[AppInstanceConfig.Record](appId) {
-      AppInstanceConfig.Record.`runState` -> state.toString
+      AppInstanceConfig.Record.`runState` -> state
     }).map      { r => r.ok }
       .andThen  {
         case Failure(t) => log.error(t, s"Failed to switch state to '${state}'!")
@@ -396,9 +399,40 @@ object AppInstance {
   }
 
 
-  sealed trait State
+  /**
+    * Designates particular epoch associated with event (identified by `eid`)
+    *
+    * @param ts (server's) timestamp of the event associated with the epoch
+    */
+  implicit class Epoch(val ts: Long) {
+
+    override def toString: String = s"{ Epoch: #${ts} }"
+
+  }
+
+  object Epoch {
+    val anteChristum: Epoch = 0l
+  }
+
+
+  /****************************/
+  /** STATES                  */
+  /****************************/
+
+  sealed trait State extends StateEx
+
+  trait StateEx {
+    val typeName = deduce
+
+    private def deduce: String = {
+      import scala.reflect.runtime.{universe => u}
+      u.runtimeMirror(getClass.getClassLoader).moduleSymbol(getClass).name.decodedName.toString
+    }
+  }
 
   object State {
+
+    val `name` = "name"
 
     def withName(name: String): State = {
       import scala.reflect.runtime.{ universe => u }
@@ -422,7 +456,11 @@ object AppInstance {
       * Active phase of the app with a long enough sample
       * to have properly trained predictor
       */
-    case object Predicting extends State
+    final case class Predicting(from: Epoch) extends State
+
+    object Predicting extends StateEx {
+      val `from` = "from"
+    }
 
     /**
       * Training phase of the app when no more training requests
