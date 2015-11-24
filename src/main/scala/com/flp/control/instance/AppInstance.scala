@@ -255,7 +255,7 @@ class AppInstanceActor(val appId: String) extends ExecutingActor {
       val f = es.filter { _.isInstanceOf[FinishEvent] }
                 .collectFirst({ case x => x.asInstanceOf[FinishEvent] })
 
-      s match { case Some(e) => ((e.identity, Variation.sentinel), f.isDefined) }
+      s match { case Some(e) => ((e.identity, e.variation), f.isDefined) }
     }
 
     { for (
