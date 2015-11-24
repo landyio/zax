@@ -148,15 +148,7 @@ trait PublicAppRoute extends AppRoute {
     import AppInstance.Commands.{PredictRequest, PredictResponse, predictTimeout}
 
     askApp[PredictResponse](appId, PredictRequest(identity))(timeout = predictTimeout)
-      .map { res => res.variation }
-  }
-
-  @inline
-  private[service] def train(appId: String): Future[Boolean] = {
-    import AppInstance.Commands.{TrainRequest, TrainResponse, trainTimeout}
-
-    askApp[TrainResponse](appId, TrainRequest())(timeout = trainTimeout)
-      .collect { case _ => true }
+      .map { r => r.variation }
   }
 
   @inline
@@ -175,11 +167,6 @@ trait PublicAppRoute extends AppRoute {
           val ev = json.convertTo[StartEvent]
 
           store(ev.copy(appId = appId, identity = ev.identity ++ ServerParams.get(ip.toOption)))
-            .andThen {
-              case Success(_) =>
-                // TODO(kudinkin): policy?
-                train(appId)
-            }
 
           complete(
             Future {
@@ -193,18 +180,18 @@ trait PublicAppRoute extends AppRoute {
       (path("predict") & `json/post`) {
         entity(as[JsObject]) { json => clientIP { ip => {
           var ev = json.convertTo[PredictEvent].copy(appId = appId)
-          ev = ev.copy(identity = ev.identity ++ ServerParams.get(ip.toOption))
+              ev = ev.copy(identity = ev.identity ++ ServerParams.get(ip.toOption))
 
           val prediction = predict(appId = ev.appId, identity = ev.identity)
 
-          prediction.onSuccess {
-            case v => store(StartEvent(appId, ev.session, ev.timestamp, ev.identity, variation = v))
-          }
-
           complete(
-            prediction.map { v =>
-              JsObject("variation" -> v.toJson)
-            }
+            prediction
+              .andThen {
+                case Success(v) => store(StartEvent(appId, ev.session, ev.timestamp, ev.identity, variation = v))
+              }
+              .map { v =>
+                JsObject("variation" -> v.toJson)
+              }
           )
         }}} ~ die(`json body required`)
       } ~
