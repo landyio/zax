@@ -38,14 +38,18 @@ class AppInstanceActor(val appId: String) extends ExecutingActor {
     *
     * @return prediction result (given user-{{{identity}}})
     **/
-  private def predict(identity: UserIdentity): Variation =
-    predictor
-      .map { p => p.predictFor(identity) }
-      .getOrElse {
-        Variation.sentinel
-      }
+  private def predict(identity: UserIdentity): Variation = {
+    val v = predictor
+              .map { p => p.predictFor(identity) }
+              .getOrElse {
+                Variation.sentinel
+              }
 
-  /**                                 k
+    log.debug("Predicted {{}} for {{}} [{{}}]", v, identity, predictor)
+    v
+  }
+
+  /**
     * Checks whether current app-state allows it to have model
     * trained
     *
