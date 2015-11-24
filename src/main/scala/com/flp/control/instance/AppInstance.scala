@@ -43,7 +43,33 @@ class AppInstanceActor(val appId: String) extends ExecutingActor {
       .map        { p => p.predictFor(identity) }
       .getOrElse  { Variation.sentinel }
 
-  private def shouldTrain(s: AppInstanceStatus): Boolean = s.eventsAllFinish >= 25
+  /**
+    * Checks whether current app-state allows it to have model
+    * trained
+    *
+    * @return whether app-instance is in eligible state (for training) or not
+    */
+  private def checkEligibility: Future[Boolean] = {
+
+    val MINIMAL_POSITIVE_OUTCOMES_NO  = 1   /* 25 */
+    val MINIMAL_SAMPLE_SIZE           = 10  /* 100 */
+
+    //
+    // TODO(kudinkin): We need some policy over here
+    //
+
+    runState match {
+
+      case State.Predicting(from) =>
+        getStatus(from.ts).map { s =>
+          s.eventsAllFinish >= MINIMAL_POSITIVE_OUTCOMES_NO &&
+          s.eventsAllStart  >= MINIMAL_SAMPLE_SIZE
+        }
+
+      case State.NoData => Future { true }
+      case _            => Future { false }
+    }
+  }
 
   /**
     * Retrains specified app
@@ -54,15 +80,16 @@ class AppInstanceActor(val appId: String) extends ExecutingActor {
 
     import SparkDriverActor.Commands.{TrainRegressor, TrainRegressorResponse}
 
-    val SAMPLE_MAX_SIZE = 1000
+    val MAXIMAL_SAMPLE_SIZE = 1000
 
-    getStatus.flatMap {
-      case s =>
+    checkEligibility.flatMap {
 
-        if (shouldTrain(s)) {
+      case true => switchState(State.Training).flatMap { _ =>
 
-          buildTrainingSample(SAMPLE_MAX_SIZE)
-            .flatMap { sample => ask[TrainRegressorResponse](sparkDriverRef, TrainRegressor(explain(sample))) }
+          buildTrainingSample(MAXIMAL_SAMPLE_SIZE)
+            .flatMap { sample =>
+              ask[TrainRegressorResponse](sparkDriverRef, TrainRegressor(explain(sample)))(executionContext, Commands.trainTimeout)
+            }
             .map {
               case TrainRegressorResponse(model, error) =>
 
@@ -70,24 +97,21 @@ class AppInstanceActor(val appId: String) extends ExecutingActor {
 
                 ask[UpdateResponse](this.storage(), Update[AppInstanceConfig.Record](appId) {
                   AppInstanceConfig.Record.`config` ->
-                    getConfig.copy(model =
-                      Some(
-                        Right[AppInstanceConfig.ClassificationModel, AppInstanceConfig.RegressionModel](
-                          model.asInstanceOf[AppInstanceConfig.RegressionModel]
-                        )
-                      )
-                    )
+                    getConfig.copy(model = Some(Right(model.asInstanceOf[AppInstanceConfig.RegressionModel])))
                 })
 
                 Some(error)
             }
             .andThen {
+              case Success(Some(_)) =>
+                switchState(State.Predicting(from = Platform.currentTime))
+
               case Failure(t) =>
                 log.error(t, "Training of predictor for #{{}} failed!", appId)
             }
-        } else {
-          Future { None }
         }
+
+      case false => Future { None }
     }
   }
 
@@ -273,26 +297,18 @@ class AppInstanceActor(val appId: String) extends ExecutingActor {
       sender ! getConfig
     }
 
-    case Commands.PredictRequest(uid) => runState is  State.NoData      or
-                                                      State.Predicting  then {
-      sender ! Commands.PredictResponse(predict(uid))
+    case Commands.PredictRequest(uid) => runState except State.Suspended then {
+      // TODO(kudinkin): move?
+      self    ! Commands.TrainRequest()
+      sender  ! Commands.PredictResponse(predict(uid))
     }
 
     case Commands.TrainRequest() => runState is State.NoData      or
                                                 State.Predicting  then {
 
-      import scala.concurrent.duration._
+      assert(runState != State.Suspended || runState != State.Training)
 
-      switchState(State.Training).flatMap { _ =>
-        train() andThen {
-          case Success(Some(_)) =>
-
-            // TODO(kudinkin): REMOVE WHEN TRANSITIONED TO FSM
-            context.system.scheduler.scheduleOnce(10.seconds) {
-              switchState(State.Predicting)
-            }
-        }
-      } pipeTo sender()
+      train() pipeTo sender()
     }
 
     case Commands.StopRequest() => runState is Any then {
@@ -496,8 +512,8 @@ object AppInstance {
 
     val trainTimeout: Timeout = 30.seconds
 
-    case class TrainRequest() extends AppInstanceAutoStartMessage[TrainResponse]
-    case class TrainResponse(error: Double)
+    private[instance] case class TrainRequest() extends AppInstanceAutoStartMessage[TrainResponse]
+    private[instance] case class TrainResponse(error: Double)
 
   }
 }
