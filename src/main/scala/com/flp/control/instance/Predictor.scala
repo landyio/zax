@@ -90,22 +90,17 @@ trait Regressor extends Predictor {
     def rand(): Double = factor * Random.nextInt() / Int.MaxValue
 
     variations
-      .zipWithIndex
-      .par // in-parallel
+      .par
       .toStream
-      .map { e => probability(identity, e) -> e }
-      .map { case (p, (v, _)) => (p + rand()) -> v }
+      .map { v => probability(identity, v) -> v }
+      .map { case (p, v) => (p + rand()) -> v }
       .sortBy { case (p, _) => -p }
       .collectFirst { case (_, v) => v }
       .get
   }
 
-  private def probability(uid: UserIdentity, variation: (Variation, Int)): Double =
-    variation match {
-      case (_, idx) =>
-        model.predict(uid.toFeatures(userDataDescriptors) ++ Seq(idx.toDouble))
-    }
-
+  private def probability(uid: UserIdentity, v: Variation): Double =
+    model.predict(uid.toFeatures(userDataDescriptors) ++ Seq(v.id.toDouble))
 
 }
 
