@@ -80,8 +80,6 @@ class AppInstanceActor(val appId: String) extends ExecutingActor {
 
   /**
     * Retrains specified app
-    *
-    * @return
     */
   private def train(): Future[Option[Double]] = {
 
@@ -125,17 +123,21 @@ class AppInstanceActor(val appId: String) extends ExecutingActor {
     }
   }
 
-  // TODO(kudinkin): move?
-
+  /**
+    * Explains given sample from the language of the app's model down to the language
+    * of the trainer: 'squeezing' features down to corresponding numerical values
+    */
   private def explain(sample: Seq[((UserIdentity, Variation), Goal#Type)]): (Seq[(Seq[Double], Double)], BitSet) =
     predictor match {
       case Some(p) =>
-        val config = p.config
+
+        // Convert sample into user-data-descriptors into numerical 'features'
         val s = sample.map {
           case ((uid, v), goal) =>
-            (uid.toFeatures(config.userDataDescriptors) ++ Seq(v.id.toDouble), goal.toDouble)
+            (uid.toFeatures(p.config.userDataDescriptors) ++ Seq(v.id.toDouble), goal.toDouble)
         }
 
+        // Designate peculiar features as categorical ones
         val cats =
           BitSet(
             p.config.userDataDescriptors.zipWithIndex
@@ -143,7 +145,7 @@ class AppInstanceActor(val appId: String) extends ExecutingActor {
                                         .map    { case (_, i) => i } :_*
           )
 
-        (s, cats + /* variation */ config.userDataDescriptors.size)
+        (s, cats + p.config.userDataDescriptors.size /* variation is a category itself */)
     }
 
 
