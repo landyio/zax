@@ -266,14 +266,14 @@ class AppInstanceActor(val appId: String) extends ExecutingActor {
 
     val storage = this.storage()
 
-    def coalesce(es: Event*): ((UserIdentity, Variation), Goal#Type) = {
+    def coalesce(es: Event*): Option[((UserIdentity, Variation), Goal#Type)] = {
       val s = es.filter { _.isInstanceOf[StartEvent] }
                 .collectFirst({ case x => x.asInstanceOf[StartEvent] })
 
       val f = es.filter { _.isInstanceOf[FinishEvent] }
                 .collectFirst({ case x => x.asInstanceOf[FinishEvent] })
 
-      s match { case Some(e) => ((e.identity, e.variation), f.isDefined) }
+      s map { case e => ((e.identity, e.variation), f.isDefined) }
     }
 
     { for (
@@ -285,7 +285,9 @@ class AppInstanceActor(val appId: String) extends ExecutingActor {
 
     ) yield (vs.seq ++ rs.seq).groupBy(e => e.session)
                               .toSeq
-                              .map { case (s, es) => coalesce(es:_*) }
+                              .map    { case (s, es) => coalesce(es:_*) }
+                              .filter { _.isDefined }
+                              .map    { _.get }
     } andThen {
       case Failure(t) =>
         log.error(t, "Failed to compose training sample (#{{}})!", appId)
