@@ -152,10 +152,10 @@ class SparkDriverActor(private val sc: SparkContext) extends ExecutingActor {
 
     val error = evaluate(model, test)
 
-    log.info( s"Finished training regressor {${model.getClass.getName}} \n" +
-              s"Sample #:   ${sample.size}                              \n" +
-              s"Categories: ${categories}                                     \n" +
-              s"Error:      ${error}                                    \n")
+    log.info( s"Finished training regressor {${model}} \n" +
+              s"Sample #:   ${sample.size}             \n" +
+              s"Categories: ${categories}              \n" +
+              s"Error:      ${error}                   \n")
 
     Future { TrainRegressorResponse(new SparkDecisionTreeRegressionModel(model, mapping), error) }
   }
