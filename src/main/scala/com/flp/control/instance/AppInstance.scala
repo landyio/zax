@@ -11,6 +11,7 @@ import com.flp.control.storage.Storage
 import com.flp.control.storage.Storage.Commands.{Update, UpdateResponse}
 import com.flp.control.util.{Reflect, Identity, boolean2Int}
 
+import scala.collection.BitSet
 import scala.compat.Platform
 import scala.concurrent.{Await, Future}
 import scala.util.{Failure, Success}
@@ -94,7 +95,10 @@ class AppInstanceActor(val appId: String) extends ExecutingActor {
 
           buildTrainingSample(MAXIMAL_SAMPLE_SIZE)
             .flatMap { sample =>
-              ask[TrainRegressorResponse](sparkDriverRef, TrainRegressor(explain(sample)))(executionContext, Commands.trainTimeout)
+              ask[TrainRegressorResponse](
+                sparkDriverRef,
+                explain(sample) match { case (s, cats) => TrainRegressor(s, cats) }
+              )(executionContext, Commands.trainTimeout)
             }
             .map {
               case TrainRegressorResponse(model, error) =>
@@ -121,16 +125,26 @@ class AppInstanceActor(val appId: String) extends ExecutingActor {
     }
   }
 
-  // TODO(kudinkin): Move
+  // TODO(kudinkin): move?
 
-  private def explain(sample: Seq[((UserIdentity, Variation), Goal#Type)]): Seq[(Seq[Double], Double)] = {
+  private def explain(sample: Seq[((UserIdentity, Variation), Goal#Type)]): (Seq[(Seq[Double], Double)], BitSet) =
     predictor match {
       case Some(p) =>
-        sample.map {
-          case ((uid, v), goal) => (uid.toFeatures(p.config.userDataDescriptors) ++ Seq(v.id.toDouble), goal.toDouble)
+        val config = p.config
+        val s = sample.map {
+          case ((uid, v), goal) =>
+            (uid.toFeatures(config.userDataDescriptors) ++ Seq(v.id.toDouble), goal.toDouble)
         }
+
+        val cats =
+          BitSet(
+            p.config.userDataDescriptors.zipWithIndex
+                                        .filter { case (d, _) => d.categorical }
+                                        .map    { case (_, i) => i } :_*
+          )
+
+        (s, cats + /* variation */ config.userDataDescriptors.size)
     }
-  }
 
 
   /**

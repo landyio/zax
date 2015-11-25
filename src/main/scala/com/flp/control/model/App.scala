@@ -50,10 +50,14 @@ object Variation {
   * @param hash optional hash-function
   */
 case class UserDataDescriptor(
-  name: String,
-  hash: (Option[String] => Int) = UserDataDescriptor.defaultHash
+  name:         String,
+  categorical:  Boolean,
+  hash:         (Option[String] => Int) = UserDataDescriptor.defaultHash
 )
 
 object UserDataDescriptor {
+  val `name` = "name"
+  val `categorical` = "categorical"
+
   protected val defaultHash: Option[String] => Int = o => o.map { _.hashCode() }.getOrElse(0)
 }

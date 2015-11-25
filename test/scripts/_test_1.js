@@ -62,7 +62,10 @@ function submit(session, ts, visitor, vars, targetVar, appId) {
     
     var appconf = {
       variations:  variations,
-      descriptors: [ "browser", "os", "lang" ]
+      descriptors: [ 
+        { name: "browser", categorical: true }, 
+        { name: "os",      categorical: true }, 
+        { name: "lang",    categorical: true } ]
     }
 
     return http.post('/app/' + appId + '/control/create', '8081', appconf, true);
@@ -90,7 +93,7 @@ function submit(session, ts, visitor, vars, targetVar, appId) {
   }
     
   var N = 500;
-  var M = 10;
+  var M = 1;
 
   
   function step_2() {
@@ -124,17 +127,18 @@ function submit(session, ts, visitor, vars, targetVar, appId) {
     return Promise.all(ps);
   }
 
-  // Step #3: Query prediction
+  // Step #3: Trigger Training
 
-  function step_3() {
-
-    sleep.sleep(2);
+  function step_3(K) {
 
     console.log("========================================================")
     console.log("Step #3")
     console.log("========================================================")
 
-    var testSample = gen.generate(props, weightsB, M);
+    // Fallback
+    if (!K) K = 1;
+
+    var testSample = gen.generate(props, weightsB, K);
 
     var ps = [];
 
@@ -149,11 +153,13 @@ function submit(session, ts, visitor, vars, targetVar, appId) {
     return Promise.all(ps);
   }
 
-  // Step #4: Trigger training
+  // Step #4: Query Predictions
 
   function step_4() {
 
-    // ...    
+    sleep.sleep(10);
+
+    step_3(M); // Repeat the step #3 `M` times
 
   }
 
@@ -162,7 +168,7 @@ function submit(session, ts, visitor, vars, targetVar, appId) {
   step_1().then(function () {
     step_2().then(function () {
       step_3().then(function () {
-        // #4
+        step_4()
       })
     })
   });

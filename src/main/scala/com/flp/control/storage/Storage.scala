@@ -224,13 +224,19 @@ object Storage extends reactivemongo.bson.DefaultBSONHandlers {
     }
 
   implicit val userDataDescriptorBSONSerializer =
-    new BSONReader[BSONString, UserDataDescriptor] with BSONWriter[UserDataDescriptor, BSONString] {
+    new BSONDocumentReader[UserDataDescriptor] with BSONDocumentWriter[UserDataDescriptor] {
 
-      override def write(v: UserDataDescriptor): BSONString =
-        BSON.write(v.name)
+      override def write(d: UserDataDescriptor): BSONDocument =
+        BSONDocument(
+          UserDataDescriptor.`name`         -> d.name,
+          UserDataDescriptor.`categorical`  -> d.categorical
+        )
 
-      override def read(bson: BSONString): UserDataDescriptor =
-        UserDataDescriptor(bson.value)
+      override def read(bson: BSONDocument): UserDataDescriptor =
+        UserDataDescriptor(
+          bson.getAs[String]  (UserDataDescriptor.`name`)         .get,
+          bson.getAs[Boolean] (UserDataDescriptor.`categorical`)  .get
+        )
     }
 
   // TODO(kudinkin): Move persisters to actual classes they serialize
@@ -379,8 +385,8 @@ object Storage extends reactivemongo.bson.DefaultBSONHandlers {
 
         override def read(bson: BSONBinary): AppInstanceConfig.Model =
           bson.byteArray.unpickle[PickleableModel] match {
-            case c @ SparkDecisionTreeClassificationModel(_)  => Left(c)
-            case r @ SparkDecisionTreeRegressionModel(_)      => Right(r)
+            case c @ SparkDecisionTreeClassificationModel(_, _) => Left(c)
+            case r @ SparkDecisionTreeRegressionModel(_, _)     => Right(r)
             case x =>
               throw new UnsupportedOperationException()
           }
@@ -403,8 +409,8 @@ object Storage extends reactivemongo.bson.DefaultBSONHandlers {
 
         override def read(bson: BSONString): AppInstanceConfig.Model =
           bson.value.unpickle[PickleableModel] match {
-            case c @ SparkDecisionTreeClassificationModel(_)  => Left(c)
-            case r @ SparkDecisionTreeRegressionModel(_)      => Right(r)
+            case c @ SparkDecisionTreeClassificationModel(_, _) => Left(c)
+            case r @ SparkDecisionTreeRegressionModel(_, _)     => Right(r)
             case x =>
               throw new UnsupportedOperationException()
           }

@@ -40,9 +40,21 @@ trait JsonSerialization extends DefaultJsonProtocol with SprayJsonSupport {
     */
   private[service] implicit object UserDataDescriptorJsonFormat extends RootJsonFormat[UserDataDescriptor] {
 
-    override def write(o: UserDataDescriptor): JsValue = o.name.toJson
+    import UserDataDescriptor._
 
-    override def read(value: JsValue): UserDataDescriptor = UserDataDescriptor(value.convertTo[String])
+    override def write(d: UserDataDescriptor): JsValue =
+      JsObject(
+        `name`        -> d.name.toJson,
+        `categorical` -> d.categorical.toJson
+      )
+
+    override def read(value: JsValue): UserDataDescriptor = {
+      { for (
+          name  <- field[String]  (value, `name`);
+          cat   <- field[Boolean] (value, `categorical`)
+        ) yield UserDataDescriptor(name, cat)
+      } get
+    }
   }
 
   /**
@@ -66,7 +78,7 @@ trait JsonSerialization extends DefaultJsonProtocol with SprayJsonSupport {
           vs <- field[Seq[Variation]]           (value, `variations`);
           ds <- field[Seq[UserDataDescriptor]]  (value, `descriptors`)
         ) yield AppInstanceConfig(variations = vs, userDataDescriptors = ds, model = None)
-      } getOrElse AppInstanceConfig.sentinel
+      } get
     }
   }
 

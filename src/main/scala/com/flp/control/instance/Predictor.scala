@@ -1,7 +1,7 @@
 package com.flp.control.instance
 
 import com.flp.control.model.{UserDataDescriptor, UserIdentity, Variation}
-import org.apache.spark.mllib.linalg.{DenseVector, Vector}
+import org.apache.spark.mllib.linalg.{Vectors, DenseVector, Vector}
 import org.apache.spark.mllib.tree.model.DecisionTreeModel
 import org.apache.spark.rdd.RDD
 
@@ -162,7 +162,19 @@ sealed trait ClassificationModel {
 }
 
 sealed trait SparkModel[+T <: SparkModel.Model] {
-  val model: T
+  protected val model: T
+  protected val mapping: SparkModel.Mapping
+
+  // TODO(kudinkin): Purge `reflective`-call(s) by narrowing down model-types explicitly
+
+  protected def predictFor(seq: Seq[Double]): Double =
+    model.predict(
+      Vectors.dense(
+        seq .zipWithIndex
+            .map { case (v, i) => mapping(i)(v).toDouble }
+            .toArray
+      )
+    )
 }
 
 @directSubclasses(Array(classOf[SparkDecisionTreeRegressionModel], classOf[SparkDecisionTreeClassificationModel]))
@@ -170,50 +182,50 @@ sealed trait PickleableModel
 
 object SparkModel {
 
-  //
-  // - Hey, Joe, do you love ducks?
-  // - Quack-quack!
-  //
+  /**
+    * Mapping from categorical values (squashed to doubles)
+    * into {0..N} range (enforced by 'mllib')
+    */
+  type Mapping = Map[Int, Map[Double, Int]]
 
+  /**
+    * - Hey, Joe, do you love ducks?
+    * - Quack-quack!
+    */
   type Model = {
     def predict(features: Vector): Double
     def predict(features: RDD[Vector]): RDD[Double]
   }
 }
 
-class SparkRegressionModel[+T <: SparkModel.Model](override val model: T) extends RegressionModel
-                                                                          with    SparkModel[T] {
+class SparkRegressionModel[+T <: SparkModel.Model](
+  override val model:   T,
+  override val mapping: SparkModel.Mapping
+) extends RegressionModel
+  with    SparkModel[T] {
 
-  // TODO(kudinkin): Purge `reflective`-call(s) by narrowing down model-types explicitly
-
-  override def predict(seq: Seq[Double]): Double =
-    model.predict(new DenseVector(seq.toArray))
-
-}
-
-final case class SparkDecisionTreeRegressionModel(override val model: DecisionTreeModel)
-  extends SparkRegressionModel[DecisionTreeModel](model)
-  with    PickleableModel
-
-
-class SparkClassificationModel[+T <: SparkModel.Model](override val model: T) extends ClassificationModel
-                                                                              with    SparkModel[T] {
-
-  // TODO(kudinkin): Purge `reflective`-call(s) by narrowing down model-types explicitly
-
-  override def predict(seq: Seq[Double]): Int =
-    model.predict(new DenseVector(seq.toArray)).toInt
+  override def predict(seq: Seq[Double]): Double = predictFor(seq)
 
 }
 
-final case class SparkDecisionTreeClassificationModel(override val model: DecisionTreeModel)
-  extends SparkClassificationModel[DecisionTreeModel](model)
+final case class SparkDecisionTreeRegressionModel(override val model: DecisionTreeModel, override val mapping: SparkModel.Mapping)
+  extends SparkRegressionModel[DecisionTreeModel](model, mapping)
   with    PickleableModel
 
-// predicted labels are +1 or -1 for GBT.
-//class SparkRandomForestRegressionModel(override val model: RandomForestModel)
-//  extends SparkRegressionModel[RandomForestModel]
-//
-//class SparkDecisionTreeClassificationModel(override val model: DecisionTreeModel)
-//  extends SparkRegressionModel[DecisionTreeModel]
+
+class SparkClassificationModel[+T <: SparkModel.Model](
+  override val model: T,
+  override val mapping: SparkModel.Mapping
+) extends ClassificationModel
+  with    SparkModel[T] {
+
+  override def predict(seq: Seq[Double]): Int = predictFor(seq).toInt
+
+}
+
+final case class SparkDecisionTreeClassificationModel(
+  override val model: DecisionTreeModel,
+  override val mapping: SparkModel.Mapping
+) extends SparkClassificationModel[DecisionTreeModel](model, mapping)
+  with    PickleableModel
 
