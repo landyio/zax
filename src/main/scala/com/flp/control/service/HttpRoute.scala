@@ -6,7 +6,7 @@ import com.flp.control.App
 import com.flp.control.actors.{Logging, AskSupport, DefaultTimeout}
 import com.flp.control.instance._
 import com.flp.control.model._
-import com.flp.control.service.serialization.JsonSerialization
+import com.flp.control.service.serialization.JsonSupport
 import com.flp.control.storage.Storage
 import spray.http.HttpHeaders.RawHeader
 import spray.http.MediaTypes._
@@ -260,7 +260,7 @@ trait AppRoute extends Service {
 }
 
 
-trait Service extends HttpService with JsonSerialization
+trait Service extends HttpService with JsonSupport
                                   with Logging
                                   with AskSupport
                                   with DefaultTimeout {

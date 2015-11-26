@@ -5,7 +5,7 @@ import com.flp.control.model._
 import spray.httpx.SprayJsonSupport
 import spray.json._
 
-trait JsonSerialization extends DefaultJsonProtocol with SprayJsonSupport {
+trait JsonSupport extends DefaultJsonProtocol with SprayJsonSupport {
 
   private def field[T](value: JsValue, fieldName: String, default: => T)(implicit reader: JsonReader[Option[T]]): T = {
     fromField[Option[T]](value, fieldName)(reader = reader).getOrElse(default)
