@@ -101,7 +101,7 @@ class AppInstanceActor(val appId: String) extends ExecutingActor {
             .map {
               case TrainRegressorResponse(model, error) =>
 
-                import Storage.{appInstanceConfigBSONSerializer, appInstanceConfigRecordBSONSerializer}
+                import Storage.Persisters.{appInstanceConfigPersister, appInstanceConfigRecordPersister}
 
                 ask[UpdateResponse](this.storage(), Update[AppInstanceConfig.Record](appId) {
                   AppInstanceConfig.Record.`config` ->
@@ -154,6 +154,7 @@ class AppInstanceActor(val appId: String) extends ExecutingActor {
     **/
   private def getStatus(from: Epoch = 0l): Future[AppInstanceStatus] = {
 
+    import Storage.Persisters._
     import Storage.Commands.{Count, CountResponse}
 
     val state   = this.runState
@@ -188,6 +189,7 @@ class AppInstanceActor(val appId: String) extends ExecutingActor {
     predictor.collect { case p => p.config } get // getOrElse AppInstanceConfig.sentinel
 
   private def reloadConfig(): Future[AppInstanceConfig.Record] = {
+    import Storage.Persisters._
     import Storage.Commands.{Load, LoadResponse}
 
     val f = { for (
@@ -250,7 +252,7 @@ class AppInstanceActor(val appId: String) extends ExecutingActor {
     * @param state target state being switched to
     */
   private def switchState(state: State): Future[AppInstanceConfig.Record] = {
-    import Storage._
+    import Storage.Persisters._
 
     ask[UpdateResponse](this.storage(), Update[AppInstanceConfig.Record](appId) {
       AppInstanceConfig.Record.`runState` -> state
@@ -264,7 +266,8 @@ class AppInstanceActor(val appId: String) extends ExecutingActor {
   }
 
   private def buildTrainingSample(maxSize: Int): Future[Seq[((UserIdentity, Variation), Goal#Type)]] = {
-    import com.flp.control.storage.Storage
+    import Storage.Persisters._
+    import Storage.Commands.{Load, LoadResponse}
 
     val storage = this.storage()
 
@@ -279,11 +282,11 @@ class AppInstanceActor(val appId: String) extends ExecutingActor {
     }
 
     { for (
-      vs <- ask(storage, Storage.Commands.Load[StartEvent](Event.`appId` -> appId)(maxSize))
-              .mapTo[Storage.Commands.LoadResponse[StartEvent]];
+      vs <- ask(storage, Load[StartEvent](Event.`appId` -> appId)(maxSize))
+              .mapTo[LoadResponse[StartEvent]];
 
-      rs <- ask(storage, Storage.Commands.Load[FinishEvent](Event.`appId` -> appId)(maxSize))
-              .mapTo[Storage.Commands.LoadResponse[FinishEvent]]
+      rs <- ask(storage, Load[FinishEvent](Event.`appId` -> appId)(maxSize))
+              .mapTo[LoadResponse[FinishEvent]]
 
     ) yield (vs.seq ++ rs.seq).groupBy(e => e.session)
                               .toSeq

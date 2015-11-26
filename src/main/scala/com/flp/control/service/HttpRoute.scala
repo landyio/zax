@@ -37,6 +37,8 @@ class PublicHttpRouteActor extends HttpServiceActor with PublicAppRoute
 
 trait PrivateAppRoute extends PublicAppRoute {
 
+  import Storage.Persisters._
+
   @inline
   private[service] def control(appId: String, principal: Principal): Route = pathPrefix("control") {
     placeholder ~
@@ -141,6 +143,8 @@ trait PrivateAppRoute extends PublicAppRoute {
 
 
 trait PublicAppRoute extends AppRoute {
+
+  import Storage.Persisters._
 
   @inline
   private[service] def predict(appId: String, identity: UserIdentity): Future[Variation] = {

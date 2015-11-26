@@ -6,6 +6,7 @@ import com.flp.control.instance.AppInstance.State
 import com.flp.control.instance._
 import com.flp.control.model._
 import com.typesafe.config.{Config, ConfigFactory}
+import reactivemongo.bson.DefaultBSONHandlers
 
 import scala.concurrent.Future
 import scala.language.implicitConversions
@@ -19,26 +20,36 @@ class StorageActor extends ExecutingActor {
   import reactivemongo.bson._
 
   private val config: Config = ConfigFactory.load()
-  private val nodes: Seq[String] = config.getString("flp.mongo.hosts").split(",").toSeq.map { s => s.trim }
-  private val dbname: String = config.getString("flp.mongo.database")
+
+  private val nodes: Seq[String]  = config.getString("flp.mongo.hosts").split(",").toSeq.map { s => s.trim }
+  private val db: String          = config.getString("flp.mongo.database")
 
   private val driver: MongoDriver = new MongoDriver()
+
   private val connection: MongoConnection = driver.connection(nodes = nodes)
-  private val database: DefaultDB = connection.db(name = dbname)
+
+  private val database: DefaultDB = connection.db(name = db)
 
   private def trace(f: Future[_], message: => String) =
     f.andThen {
       case Failure(t) => log.error(t, message)
     }
 
-  // TODO: think about why the following is not a good idea:
-  // TODO: val collections = scala.collection.mutable.Map[String, BSONCollection]()
-  // TODO: def find(p: Persister[_]): BSONCollection = collections.getOrElseUpdate( p.collection, database.collection[BSONCollection](p.collection) )
-  private def find(c: String): BSONCollection = database.collection[BSONCollection](c)
+  /**
+    * Looks up particular collection inside database
+    *
+    * @param c collection to bee sought for
+    * @return found collection
+    */
+  private def find(c: String): BSONCollection =
+    database.collection[BSONCollection](c)
+
+  import Commands._
+  import Persisters._
 
   def receive = trace {
 
-    case Commands.LoadRequest(persister, selector, upTo) =>
+    case LoadRequest(persister, selector, upTo) =>
       implicit val reader = persister
 
       // TODO(kudinkin): `collect` silently swallows the errors in the `Storage`
@@ -50,13 +61,16 @@ class StorageActor extends ExecutingActor {
 
       trace(
         r.map { os =>
+          // _DBG
+          println(s"XYXY: ${os} / ${classOf[persister.Target].getName} / ${persister.collection}")
+
           Commands.LoadResponse(os)
         },
         s"Failed to retrieve data from ${persister.collection} for request: ${selector}"
       ) pipeTo sender()
 
 
-    case Commands.CountRequest(persister, selector) =>
+    case CountRequest(persister, selector) =>
       val c = find(persister.collection)
       val r = c.count(selector = Some(selector))
 
@@ -65,7 +79,7 @@ class StorageActor extends ExecutingActor {
         s"Failed to retrieve data from ${persister.collection} for request: ${selector}"
       ) pipeTo sender()
 
-    case Commands.StoreRequest(persister, obj) =>
+    case StoreRequest(persister, obj) =>
       val c = find(persister.collection)
       val r = c.insert(obj)(writer = persister, ec = executionContext)
 
@@ -74,7 +88,7 @@ class StorageActor extends ExecutingActor {
         s"Failed to save data in ${persister.collection} for object: ${obj}"
       ) pipeTo sender()
 
-    case Commands.UpdateRequest(persister, selector, modifier) =>
+    case UpdateRequest(persister, selector, modifier) =>
       val w = Storage.BSONDocumentIdentity
 
       val c = find(persister.collection)
@@ -86,25 +100,33 @@ class StorageActor extends ExecutingActor {
       ) pipeTo sender()
 
   }
-
-  // override def preStart(): Unit = { }
-  // override def postStop(): Unit = { }
-
 }
 
-object Storage extends reactivemongo.bson.DefaultBSONHandlers {
+object Storage extends DefaultBSONHandlers {
 
   val actorName: String = "storage"
 
   type Id = String
+
   val `_id` = "_id"
   val `$oid` = "$oid"
 
   import reactivemongo.bson._
 
-  def byId(id: Id) = BSONDocument(`_id` -> BSONObjectID(id))
+  /**
+    * Helper generating selector for Mongo queries by supplied id of the object
+    *
+    * @param id object-id
+    * @return bson-document (so called 'selector')
+    */
+  private def byId(id: Id) = BSONDocument(`_id` -> BSONObjectID(id))
 
+  /**
+    * Commands accepted by the storaging actor
+    */
   object Commands {
+
+    import Persisters._
 
     case class StoreRequest[T](persister: PersisterW[T], obj: T)
     case class StoreResponse(ok: Boolean)
@@ -158,27 +180,10 @@ object Storage extends reactivemongo.bson.DefaultBSONHandlers {
 
   }
 
-  import reactivemongo.bson._
 
-  implicit def MapReader[B <: BSONValue, V](implicit reader: BSONReader[B, V]): BSONDocumentReader[Map[String, V]] =
-    new BSONDocumentReader[Map[String, V]] {
-      def read(bson: BSONDocument): Map[String, V] = bson.elements.map { case (k, v) => k -> reader.read(v.asInstanceOf[B]) }.toMap
-    }
-
-  implicit def MapWriter[V, B <: BSONValue](implicit writer: BSONWriter[V, B]): BSONDocumentWriter[Map[String, V]] =
-    new BSONDocumentWriter[Map[String, V]] {
-      def write(map: Map[String, V]): BSONDocument = BSONDocument(map.toStream.map { case (k, v) => k -> writer.write(v) })
-    }
-
-  implicit def SeqReader[B <: BSONValue, V](implicit reader: BSONReader[B, V]): BSONReader[BSONArray, Seq[V]] =
-    new BSONReader[BSONArray, Seq[V]] {
-      def read(bson: BSONArray): Seq[V] = bson.values.map { case v => reader.read(v.asInstanceOf[B]) }.toSeq
-    }
-
-  implicit def SeqWriter[V, B <: BSONValue](implicit writer: BSONWriter[V, B]): BSONWriter[Seq[V], BSONArray] =
-    new BSONWriter[Seq[V], BSONArray] {
-      def write(seq: Seq[V]): BSONArray = BSONArray(seq.toStream.map { case (v) => writer.write(v) })
-    }
+  /**
+    * Persisters
+    */
 
   trait PersisterBase[T] {
     type Target = T
@@ -198,307 +203,338 @@ object Storage extends reactivemongo.bson.DefaultBSONHandlers {
     override def toString: String = s"persister-rw($collection)"
   }
 
+  object Persisters {
 
-  //
-  // Persisters
-  //
+    import reactivemongo.bson._
 
-  implicit val userIdentityBSONSerializer =
-    new BSONDocumentReader[UserIdentity] with BSONDocumentWriter[UserIdentity] {
-
-      override def write(uid: UserIdentity): BSONDocument =
-        BSON.writeDocument(uid.params)
-
-      override def read(bson: BSONDocument): UserIdentity =
-        bson.asOpt[UserIdentity.Params] collect { case ps => UserIdentity(ps) } getOrElse UserIdentity.empty
-    }
-
-  implicit val variationBSONSerializer =
-    new BSONReader[BSONString, Variation] with BSONWriter[Variation, BSONString] {
-
-      override def write(v: Variation): BSONString =
-        BSON.write(v.id)
-
-      override def read(bson: BSONString): Variation =
-        Variation(bson.value)
-    }
-
-  implicit val userDataDescriptorBSONSerializer =
-    new BSONDocumentReader[UserDataDescriptor] with BSONDocumentWriter[UserDataDescriptor] {
-
-      override def write(d: UserDataDescriptor): BSONDocument =
-        BSONDocument(
-          UserDataDescriptor.`name`         -> d.name,
-          UserDataDescriptor.`categorical`  -> d.categorical
-        )
-
-      override def read(bson: BSONDocument): UserDataDescriptor =
-        UserDataDescriptor(
-          bson.getAs[String]  (UserDataDescriptor.`name`)         .get,
-          bson.getAs[Boolean] (UserDataDescriptor.`categorical`)  .get
-        )
-    }
-
-  // TODO(kudinkin): Move persisters to actual classes they serialize
-
-  implicit val startEventBSONSerializer =
-    new Persister[StartEvent] {
-      import Event._
-      val collection: String = s"events:${`type:Start`}"
-
-      override def write(t: StartEvent): BSONDocument =
-        BSONDocument(
-          `appId`     -> t.appId,
-          `type`      -> `type:Start`,
-          `timestamp` -> t.timestamp,
-          `session`   -> t.session,
-          `identity`  -> BSON.writeDocument(t.identity),
-          `variation` -> BSON.write(t.variation)
-        )
-
-      override def read(bson: BSONDocument): StartEvent =
-        StartEvent(
-          appId     = bson.getAs[String]        (`appId`)     .get,
-          session   = bson.getAs[String]        (`session`)   .get,
-          timestamp = bson.getAs[Long]          (`timestamp`) .get,
-          identity  = bson.getAs[UserIdentity]  (`identity`)  .get,
-          variation = bson.getAs[Variation]     (`variation`) .get
-        )
-    }
-
-  implicit val finishEventBSONSerializer =
-    new Persister[FinishEvent] {
-      import Event._
-      override val collection: String = s"events${`type:Finish`}"
-
-      override def write(t: FinishEvent) =
-        BSONDocument(
-          `appId`     -> t.appId,
-          `type`      -> `type:Finish`,
-          `timestamp` -> t.timestamp,
-          `session`   -> t.session
-        )
-
-      override def read(bson: BSONDocument) =
-        FinishEvent(
-          appId     = bson.getAs[String]  (`appId`)     .get,
-          session   = bson.getAs[String]  (`session`)   .get,
-          timestamp = bson.getAs[Long]    (`timestamp`) .get
-        )
-    }
-
-
-  object Model {
-
-    abstract class AbstractPicklerUnpickler[T]() extends scala.AnyRef with scala.pickling.Pickler[T] with scala.pickling.Unpickler[T] {
-      import scala.pickling.{PBuilder, Pickler}
-
-      def putInto[F](field: F, builder: PBuilder)(implicit pickler: Pickler[F]): Unit = {
-        pickler.pickle(field, builder)
-      }
-    }
-
-
-    //
-    // NOTA BENE
-    //    That's inevitable evil: `pickling` can't live with enums (even Scala's ones)
-    //    https://github.com/scala/pickling/issues/17
-    //
-
-    import scala.pickling.pickler._
-
-    object Picklers extends PrimitivePicklers {
-
-      import org.apache.spark.mllib.tree.configuration.{Algo, FeatureType}
-
-      implicit val algoPickler = new AbstractPicklerUnpickler[Algo.Algo] {
-        import scala.pickling.{FastTypeTag, PBuilder, PReader}
-
-        override def tag = FastTypeTag[Algo.Algo]
-
-        override def pickle(picklee: Algo.Algo, builder: PBuilder): Unit = {
-          builder.beginEntry(picklee, tag)
-
-          builder.putField("algo", { fb =>
-            putInto(picklee match {
-              case Algo.Classification  => "classification"
-              case Algo.Regression      => "regression"
-            }, fb)
-          })
-
-          builder.endEntry()
+    /**
+      * Helpers facilitating collections marshalling/unmarshalling
+      */
+    object Helpers {
+      implicit def MapReader[B <: BSONValue, V](implicit reader: BSONReader[B, V]): BSONDocumentReader[Map[String, V]] =
+        new BSONDocumentReader[Map[String, V]] {
+          def read(bson: BSONDocument): Map[String, V] = bson.elements.map { case (k, v) => k -> reader.read(v.asInstanceOf[B]) }.toMap
         }
 
-        override def unpickle(tag: String, reader: PReader): Any = {
-          stringPickler.unpickleEntry(reader.readField("algo")).asInstanceOf[String] match {
-            case "classification" => Algo.Classification
-            case "regression"     => Algo.Regression
-          }
+      implicit def MapWriter[V, B <: BSONValue](implicit writer: BSONWriter[V, B]): BSONDocumentWriter[Map[String, V]] =
+        new BSONDocumentWriter[Map[String, V]] {
+          def write(map: Map[String, V]): BSONDocument = BSONDocument(map.toStream.map { case (k, v) => k -> writer.write(v) })
         }
+
+      implicit def SeqReader[B <: BSONValue, V](implicit reader: BSONReader[B, V]): BSONReader[BSONArray, Seq[V]] =
+        new BSONReader[BSONArray, Seq[V]] {
+          def read(bson: BSONArray): Seq[V] = bson.values.map { case v => reader.read(v.asInstanceOf[B]) }.toSeq
+        }
+
+      implicit def SeqWriter[V, B <: BSONValue](implicit writer: BSONWriter[V, B]): BSONWriter[Seq[V], BSONArray] =
+        new BSONWriter[Seq[V], BSONArray] {
+          def write(seq: Seq[V]): BSONArray = BSONArray(seq.toStream.map { case (v) => writer.write(v) })
+        }
+    }
+
+    /**
+      * Application model persisters instances
+      */
+
+    import Helpers._
+
+    // TODO(kudinkin): Move persisters closer to actual classes they serialize
+
+    implicit val userIdentityPersister =
+      new BSONDocumentReader[UserIdentity] with BSONDocumentWriter[UserIdentity] {
+
+        override def write(uid: UserIdentity): BSONDocument =
+          BSON.writeDocument(uid.params)
+
+        override def read(bson: BSONDocument): UserIdentity =
+          bson.asOpt[UserIdentity.Params] collect { case ps => UserIdentity(ps) } getOrElse UserIdentity.empty
       }
 
-      implicit val featureTypePickler = new AbstractPicklerUnpickler[FeatureType.FeatureType] {
-        import scala.pickling.{FastTypeTag, PBuilder, PReader}
+    implicit val variationPersister =
+      new BSONReader[BSONString, Variation] with BSONWriter[Variation, BSONString] {
 
-        override def tag = FastTypeTag[FeatureType.FeatureType]
+        override def write(v: Variation): BSONString =
+          BSON.write(v.id)
 
-        override def pickle(picklee: FeatureType.FeatureType, builder: PBuilder): Unit = {
-          builder.beginEntry(picklee, tag)
-
-          builder.putField("featureType", { fb =>
-            putInto(picklee match {
-              case FeatureType.Categorical  => "categorical"
-              case FeatureType.Continuous   => "continuous"
-            }, fb)
-          })
-
-          builder.endEntry()
-        }
-
-        override def unpickle(tag: String, reader: PReader): Any = {
-          stringPickler.unpickleEntry(reader.readField("featureType")).asInstanceOf[String] match {
-            case "categorical"  => FeatureType.Categorical
-            case "continuous"   => FeatureType.Continuous
-          }
-        }
+        override def read(bson: BSONString): Variation =
+          Variation(bson.value)
       }
-    }
 
+    implicit val userDataDescriptorPersister =
+      new BSONDocumentReader[UserDataDescriptor] with BSONDocumentWriter[UserDataDescriptor] {
 
-    import Picklers.{featureTypePickler, algoPickler}
-
-    implicit val binaryBSONSerializer =
-      new BSONReader[BSONBinary, AppInstanceConfig.Model] with BSONWriter[AppInstanceConfig.Model, BSONBinary] {
-
-        import scala.pickling._
-        import Defaults._
-        import binary._
-
-        override def write(model: AppInstanceConfig.Model): BSONBinary =
-          BSONBinary(
-            model match {
-              case Left(e)  => e.asInstanceOf[SparkDecisionTreeClassificationModel].pickle.value
-              case Right(e) => e.asInstanceOf[SparkDecisionTreeRegressionModel].pickle.value
-            },
-            Subtype.UserDefinedSubtype
+        override def write(d: UserDataDescriptor): BSONDocument =
+          BSONDocument(
+            UserDataDescriptor.`name`         -> d.name,
+            UserDataDescriptor.`categorical`  -> d.categorical
           )
 
-        override def read(bson: BSONBinary): AppInstanceConfig.Model =
-          bson.byteArray.unpickle[PickleableModel] match {
-            case c @ SparkDecisionTreeClassificationModel(_, _) => Left(c)
-            case r @ SparkDecisionTreeRegressionModel(_, _)     => Right(r)
-            case x =>
-              throw new UnsupportedOperationException()
-          }
+        override def read(bson: BSONDocument): UserDataDescriptor =
+          UserDataDescriptor(
+            bson.getAs[String]  (UserDataDescriptor.`name`)         .get,
+            bson.getAs[Boolean] (UserDataDescriptor.`categorical`)  .get
+          )
       }
 
-    implicit val jsonBSONSerializer =
-        new BSONReader[BSONString, AppInstanceConfig.Model] with BSONWriter[AppInstanceConfig.Model, BSONString] {
 
-        import scala.pickling._
-        import Defaults._
-        import json._
+    implicit val startEventPersister =
+      new Persister[StartEvent] {
+        import Event._
+        val collection: String = s"events:${`type:Start`}"
 
-        override def write(model: AppInstanceConfig.Model): BSONString =
-          BSONString(
-            model match {
-              case Left(e)  => e.asInstanceOf[SparkDecisionTreeClassificationModel].pickle.value
-              case Right(e) => e.asInstanceOf[SparkDecisionTreeRegressionModel].pickle.value
+        override def write(t: StartEvent): BSONDocument =
+          BSONDocument(
+            `appId`     -> t.appId,
+            `type`      -> `type:Start`,
+            `timestamp` -> t.timestamp,
+            `session`   -> t.session,
+            `identity`  -> BSON.writeDocument(t.identity),
+            `variation` -> BSON.write(t.variation)
+          )
+
+        override def read(bson: BSONDocument): StartEvent =
+          StartEvent(
+            appId     = bson.getAs[String]        (`appId`)     .get,
+            session   = bson.getAs[String]        (`session`)   .get,
+            timestamp = bson.getAs[Long]          (`timestamp`) .get,
+            identity  = bson.getAs[UserIdentity]  (`identity`)  .get,
+            variation = bson.getAs[Variation]     (`variation`) .get
+          )
+      }
+
+    implicit val finishEventPersister =
+      new Persister[FinishEvent] {
+        import Event._
+        override val collection: String = s"events${`type:Finish`}"
+
+        override def write(t: FinishEvent) =
+          BSONDocument(
+            `appId`     -> t.appId,
+            `type`      -> `type:Finish`,
+            `timestamp` -> t.timestamp,
+            `session`   -> t.session
+          )
+
+        override def read(bson: BSONDocument) =
+          FinishEvent(
+            appId     = bson.getAs[String]  (`appId`)     .get,
+            session   = bson.getAs[String]  (`session`)   .get,
+            timestamp = bson.getAs[Long]    (`timestamp`) .get
+          )
+      }
+
+
+    object Model {
+
+      //
+      // NOTA BENE
+      //    That's inevitable evil: `pickling` can't live with enums (even Scala's ones)
+      //
+      //    https://github.com/scala/pickling/issues/17
+      //
+
+      import scala.pickling.pickler._
+
+      object Picklers extends PrimitivePicklers {
+
+        abstract class AbstractPicklerUnpickler[T]() extends scala.AnyRef with scala.pickling.Pickler[T] with scala.pickling.Unpickler[T] {
+          import scala.pickling.{PBuilder, Pickler}
+
+          def putInto[F](field: F, builder: PBuilder)(implicit pickler: Pickler[F]): Unit = {
+            pickler.pickle(field, builder)
+          }
+        }
+
+        import org.apache.spark.mllib.tree.configuration.{Algo, FeatureType}
+
+        implicit val algoPickler = new AbstractPicklerUnpickler[Algo.Algo] {
+          import scala.pickling.{FastTypeTag, PBuilder, PReader}
+
+          override def tag = FastTypeTag[Algo.Algo]
+
+          override def pickle(picklee: Algo.Algo, builder: PBuilder): Unit = {
+            builder.beginEntry(picklee, tag)
+
+            builder.putField("algo", { fb =>
+              putInto(picklee match {
+                case Algo.Classification  => "classification"
+                case Algo.Regression      => "regression"
+              }, fb)
+            })
+
+            builder.endEntry()
+          }
+
+          override def unpickle(tag: String, reader: PReader): Any = {
+            stringPickler.unpickleEntry(reader.readField("algo")).asInstanceOf[String] match {
+              case "classification" => Algo.Classification
+              case "regression"     => Algo.Regression
             }
-          )
-
-        override def read(bson: BSONString): AppInstanceConfig.Model =
-          bson.value.unpickle[PickleableModel] match {
-            case c @ SparkDecisionTreeClassificationModel(_, _) => Left(c)
-            case r @ SparkDecisionTreeRegressionModel(_, _)     => Right(r)
-            case x =>
-              throw new UnsupportedOperationException()
           }
-      }
-  }
-
-  implicit val appInstanceStateBSONSerializer =
-    new BSONDocumentReader[AppInstance.State] with BSONDocumentWriter[AppInstance.State] {
-
-      override def write(s: State): BSONDocument =
-        s match {
-          case State.Training
-             | State.Suspended
-             | State.NoData =>
-            BSONDocument(
-              State.`name` -> s.typeName
-            )
-
-          case State.Predicting(from) =>
-            BSONDocument(
-              State.`name`            -> State.Predicting.typeName,
-              State.Predicting.`from` -> from.ts
-            )
         }
 
-      override def read(bson: BSONDocument): State = {
-        import AppInstance.Epoch
+        implicit val featureTypePickler = new AbstractPicklerUnpickler[FeatureType.FeatureType] {
+          import scala.pickling.{FastTypeTag, PBuilder, PReader}
 
-        bson.getAs[String](State.`name`).collect {
-          case State.Predicting.typeName =>
-            State.Predicting(
-              bson.getAs[Long](State.Predicting.`from`) map { ts => Epoch(ts) } getOrElse Epoch.anteChristum
+          override def tag = FastTypeTag[FeatureType.FeatureType]
+
+          override def pickle(picklee: FeatureType.FeatureType, builder: PBuilder): Unit = {
+            builder.beginEntry(picklee, tag)
+
+            builder.putField("featureType", { fb =>
+              putInto(picklee match {
+                case FeatureType.Categorical  => "categorical"
+                case FeatureType.Continuous   => "continuous"
+              }, fb)
+            })
+
+            builder.endEntry()
+          }
+
+          override def unpickle(tag: String, reader: PReader): Any = {
+            stringPickler.unpickleEntry(reader.readField("featureType")).asInstanceOf[String] match {
+              case "categorical"  => FeatureType.Categorical
+              case "continuous"   => FeatureType.Continuous
+            }
+          }
+        }
+      }
+
+
+      import Picklers.{featureTypePickler, algoPickler}
+
+      implicit val binaryPersister =
+        new BSONReader[BSONBinary, AppInstanceConfig.Model] with BSONWriter[AppInstanceConfig.Model, BSONBinary] {
+
+          import scala.pickling.Defaults._
+          import scala.pickling.binary._
+
+          override def write(model: AppInstanceConfig.Model): BSONBinary =
+            BSONBinary(
+              model match {
+                case Left(e)  => e.asInstanceOf[SparkDecisionTreeClassificationModel].pickle.value
+                case Right(e) => e.asInstanceOf[SparkDecisionTreeRegressionModel].pickle.value
+              },
+              Subtype.UserDefinedSubtype
             )
 
-          case n: String =>
-            State.withName(n)
-        }.get
-      }
-    }
+          override def read(bson: BSONBinary): AppInstanceConfig.Model =
+            bson.byteArray.unpickle[PickleableModel] match {
+              case c @ SparkDecisionTreeClassificationModel(_, _) => Left(c)
+              case r @ SparkDecisionTreeRegressionModel(_, _)     => Right(r)
+              case x =>
+                throw new UnsupportedOperationException()
+            }
+        }
 
-  //
-  // TODO(kudinkin): Merge
-  //
+      implicit val jsonPersister =
+          new BSONReader[BSONString, AppInstanceConfig.Model] with BSONWriter[AppInstanceConfig.Model, BSONString] {
 
-  implicit val appInstanceConfigBSONSerializer =
-    new BSONDocumentReader[AppInstanceConfig] with BSONDocumentWriter[AppInstanceConfig] {
-      import AppInstanceConfig._
+          import scala.pickling.Defaults._
+          import scala.pickling.json._
 
-      import Model.binaryBSONSerializer
-
-      override def write(c: AppInstanceConfig): BSONDocument = {
-        BSONDocument(
-          `variations`  -> c.variations,
-          `descriptors` -> c.userDataDescriptors,
-          `model`       -> c.model
-        )
-      }
-
-      override def read(bson: BSONDocument): AppInstanceConfig = {
-        { for (
-            vs    <- bson.getAs[Seq[Variation]]           (`variations`);
-            ds    <- bson.getAs[Seq[UserDataDescriptor]]  (`descriptors`)
-          ) yield AppInstanceConfig(
-              variations          = vs.toList,
-              userDataDescriptors = ds.toList,
-              model               = bson.getAs[AppInstanceConfig.Model](`model`)
+          override def write(model: AppInstanceConfig.Model): BSONString =
+            BSONString(
+              model match {
+                case Left(e)  => e.asInstanceOf[SparkDecisionTreeClassificationModel].pickle.value
+                case Right(e) => e.asInstanceOf[SparkDecisionTreeRegressionModel].pickle.value
+              }
             )
-        }.get
+
+          override def read(bson: BSONString): AppInstanceConfig.Model =
+            bson.value.unpickle[PickleableModel] match {
+              case c @ SparkDecisionTreeClassificationModel(_, _) => Left(c)
+              case r @ SparkDecisionTreeRegressionModel(_, _)     => Right(r)
+              case x =>
+                throw new UnsupportedOperationException()
+            }
+        }
+    }
+
+    implicit val appInstanceStatePersister =
+      new BSONDocumentReader[AppInstance.State] with BSONDocumentWriter[AppInstance.State] {
+
+        override def write(s: State): BSONDocument =
+          s match {
+            case State.Training
+               | State.Suspended
+               | State.NoData =>
+              BSONDocument(
+                State.`name` -> s.typeName
+              )
+
+            case State.Predicting(from) =>
+              BSONDocument(
+                State.`name`            -> State.Predicting.typeName,
+                State.Predicting.`from` -> from.ts
+              )
+          }
+
+        override def read(bson: BSONDocument): State = {
+          import AppInstance.Epoch
+
+          bson.getAs[String](State.`name`).collect {
+            case State.Predicting.typeName =>
+              State.Predicting(
+                bson.getAs[Long](State.Predicting.`from`) map { ts => Epoch(ts) } getOrElse Epoch.anteChristum
+              )
+
+            case n: String =>
+              State.withName(n)
+          }.get
+        }
       }
-    }
 
-  implicit val appInstanceConfigRecordBSONSerializer =
-    new Persister[AppInstanceConfig.Record] {
-      import AppInstanceConfig.Record._
-      val collection: String = "appconfig"
+    //
+    // TODO(kudinkin): Merge
+    //
 
-      override def write(t: AppInstanceConfig.Record): BSONDocument =
-        BSONDocument(
-          `_id`       -> BSONObjectID(t.appId),
-          `runState`  -> BSON.writeDocument(t.runState),
-          `config`    -> BSON.writeDocument(t.config)
-        )
+    implicit val appInstanceConfigPersister =
+      new BSONDocumentReader[AppInstanceConfig] with BSONDocumentWriter[AppInstanceConfig] {
+        import AppInstanceConfig._
 
-      override def read(bson: BSONDocument): AppInstanceConfig.Record =
-        AppInstanceConfig.Record(
-          appId     = bson.getAs[BSONObjectID]      (`_id`)      .map { i => i.stringify } getOrElse { "" },
-          runState  = bson.getAs[State]             (`runState`) .get, // .getOrElse { AppInstance.State.Suspended },
-          config    = bson.getAs[AppInstanceConfig] (`config`)   .get
-        )
-    }
+        import Model.binaryPersister
+
+        override def write(c: AppInstanceConfig): BSONDocument = {
+          BSONDocument(
+            `variations`  -> c.variations,
+            `descriptors` -> c.userDataDescriptors,
+            `model`       -> c.model
+          )
+        }
+
+        override def read(bson: BSONDocument): AppInstanceConfig = {
+          { for (
+              vs    <- bson.getAs[Seq[Variation]]           (`variations`);
+              ds    <- bson.getAs[Seq[UserDataDescriptor]]  (`descriptors`)
+            ) yield AppInstanceConfig(
+                variations          = vs.toList,
+                userDataDescriptors = ds.toList,
+                model               = bson.getAs[AppInstanceConfig.Model](`model`)
+              )
+          }.get
+        }
+      }
+
+    implicit val appInstanceConfigRecordPersister =
+      new Persister[AppInstanceConfig.Record] {
+        import AppInstanceConfig.Record._
+        val collection: String = "appconfig"
+
+        override def write(t: AppInstanceConfig.Record): BSONDocument =
+          BSONDocument(
+            `_id`       -> BSONObjectID(t.appId),
+            `runState`  -> BSON.writeDocument(t.runState),
+            `config`    -> BSON.writeDocument(t.config)
+          )
+
+        override def read(bson: BSONDocument): AppInstanceConfig.Record =
+          AppInstanceConfig.Record(
+            appId     = bson.getAs[BSONObjectID]      (`_id`)      .map { i => i.stringify } getOrElse { "" },
+            runState  = bson.getAs[State]             (`runState`) .get, // .getOrElse { AppInstance.State.Suspended },
+            config    = bson.getAs[AppInstanceConfig] (`config`)   .get
+          )
+      }
+
+  }
 }
