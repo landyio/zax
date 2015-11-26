@@ -6,7 +6,6 @@ import com.flp.control.akka.{Logging, AskSupport, DefaultTimeout}
 import com.flp.control.boot.Boot
 import com.flp.control.instance._
 import com.flp.control.model._
-import com.flp.control.params.ServerParams
 import com.flp.control.service.serialization.JsonSerialization
 import com.flp.control.storage.Storage
 import spray.http.HttpHeaders.RawHeader
@@ -166,7 +165,12 @@ trait PublicAppRoute extends AppRoute {
         entity(as[JsObject]) { json => clientIP { ip => {
           val ev = json.convertTo[StartEvent]
 
-          store(ev.copy(appId = appId, identity = ev.identity ++ ServerParams.get(ip.toOption)))
+          val additional = Map {
+            "ip"        -> ip.toOption.map { case ip => ip.getHostAddress }.getOrElse("0.0.0.0")
+            "serverTs"  -> System.currentTimeMillis().toString
+          }
+
+          store(ev.copy(appId = appId, identity = ev.identity ++ additional))
 
           complete(
             Future {
@@ -179,10 +183,14 @@ trait PublicAppRoute extends AppRoute {
       } ~
       (path("predict") & `json/post`) {
         entity(as[JsObject]) { json => clientIP { ip => {
-          var ev = json.convertTo[PredictEvent].copy(appId = appId)
-              ev = ev.copy(identity = ev.identity ++ ServerParams.get(ip.toOption))
+          val ev = json.convertTo[PredictEvent].copy(appId = appId)
 
-          val prediction = predict(appId = ev.appId, identity = ev.identity)
+          val additional = Map {
+            "ip"        -> ip.toOption.map { case ip => ip.getHostAddress }.getOrElse("0.0.0.0")
+            "serverTs"  -> System.currentTimeMillis().toString
+          }
+
+          val prediction = predict(appId = ev.appId, identity = ev.identity ++ additional)
 
           complete(
             prediction
