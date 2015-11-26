@@ -1,4 +1,4 @@
-package com.flp.control.spark.rdd
+package com.flp.control.driver.rdd
 
 import org.apache.spark.annotation.DeveloperApi
 import org.apache.spark.rdd.RDD
@@ -6,7 +6,7 @@ import org.apache.spark.{Logging, Partition, SparkContext, TaskContext}
 
 import scala.reflect.ClassTag
 
-private[spark] class StreamPartition(val index: Int) extends Partition
+private[driver] class StreamPartition(val index: Int) extends Partition
 
 class StreamRDD[T: ClassTag](
   sc: SparkContext,

@@ -1,9 +1,9 @@
-package com.flp.control.spark
+package com.flp.control.driver
 
 import akka.pattern.pipe
 import com.flp.control.actors.ExecutingActor
 import com.flp.control.instance._
-import com.flp.control.spark.SparkDriverActor.Commands.{TrainClassifierResponse, TrainRegressorResponse}
+import com.flp.control.driver.SparkDriverActor.Commands.{TrainClassifierResponse, TrainRegressorResponse}
 import org.apache.spark.SparkContext
 import org.apache.spark.mllib.linalg.{DenseVector, Vectors}
 import org.apache.spark.mllib.regression.LabeledPoint

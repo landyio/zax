@@ -6,7 +6,7 @@ import akka.util.Timeout
 import com.flp.control.App
 import com.flp.control.actors.ExecutingActor
 import com.flp.control.model._
-import com.flp.control.spark.SparkDriverActor
+import com.flp.control.driver.SparkDriverActor
 import com.flp.control.storage.Storage
 import com.flp.control.storage.Storage.Commands.{Update, UpdateResponse}
 import com.flp.control.util.{Reflect, Identity, boolean2Int}

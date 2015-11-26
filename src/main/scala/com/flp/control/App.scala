@@ -5,7 +5,7 @@ import java.io.FileNotFoundException
 import akka.actor._
 import akka.io.IO
 import com.flp.control.actors.{AskSupport, ActorTracing, DefaultTimeout}
-import com.flp.control.spark.SparkDriverActor
+import com.flp.control.driver.SparkDriverActor
 import com.typesafe.config.ConfigFactory
 import org.apache.spark.{SparkConf, SparkContext}
 import spray.can.Http
