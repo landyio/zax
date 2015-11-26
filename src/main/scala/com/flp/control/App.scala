@@ -1,22 +1,23 @@
-package com.flp.control.boot
+package com.flp.control
 
 import java.io.FileNotFoundException
 
 import akka.actor._
 import akka.io.IO
-import akka.pattern.ask
-import com.flp.control.akka.{ActorTracing, DefaultTimeout}
+import com.flp.control.actors.{AskSupport, ActorTracing, DefaultTimeout}
 import com.flp.control.spark.SparkDriverActor
 import com.typesafe.config.ConfigFactory
-import org.apache.spark.{SparkContext, SparkConf}
+import org.apache.spark.{SparkConf, SparkContext}
 import spray.can.Http
 import spray.can.server.ServerSettings
 
 import scala.concurrent.duration._
 
-class BootActor extends Actor with ActorTracing with DefaultTimeout {
+class BootActor extends Actor with ActorTracing
+                              with AskSupport
+                              with DefaultTimeout {
 
-  import Boot._
+  import App._
 
   @inline
   private def startStorage(): Unit = {
@@ -178,11 +179,12 @@ class BootActor extends Actor with ActorTracing with DefaultTimeout {
   }
 }
 
-object Boot extends DefaultTimeout {
+object App extends DefaultTimeout with AskSupport {
 
-  val bootActorName = "boot"
+  val appActorName = "app"
+
   def actor(path: ActorPath)(implicit context: ActorContext): ActorRef = context.actorFor(path)
-  def actor(path: String)(implicit context: ActorContext): ActorRef = actor(context.system / bootActorName / path)
+  def actor(path: String)(implicit context: ActorContext): ActorRef = actor(context.system / appActorName / path)
 
   object Commands {
     case class Startup()
@@ -194,10 +196,11 @@ object Boot extends DefaultTimeout {
   sys.addShutdownHook { system.shutdown() }
 
   def main(args: Array[String]): Unit = {
-    val bootRef: ActorRef = system.actorOf(Props[BootActor], name = bootActorName)
+    val bootRef: ActorRef = system.actorOf(Props[BootActor], name = appActorName)
     system.registerOnTermination { bootRef ! Commands.Shutdown() }
 
     import scala.concurrent.Await
+
     Await.ready(bootRef ? Commands.Startup(), 60.seconds)
 
     system.log.info("Started")

@@ -1,7 +1,7 @@
 package com.flp.control.storage
 
 import akka.pattern.pipe
-import com.flp.control.akka.ExecutingActor
+import com.flp.control.actors.ExecutingActor
 import com.flp.control.instance.AppInstance.State
 import com.flp.control.instance._
 import com.flp.control.model._

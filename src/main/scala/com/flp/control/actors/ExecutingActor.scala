@@ -1,4 +1,4 @@
-package com.flp.control.akka
+package com.flp.control.actors
 
 import akka.actor.{Actor, ActorRef}
 import akka.event.LoggingAdapter

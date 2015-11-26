@@ -3,8 +3,8 @@ package com.flp.control.instance
 import akka.actor.ActorRef
 import akka.pattern.pipe
 import akka.util.Timeout
-import com.flp.control.akka.ExecutingActor
-import com.flp.control.boot.Boot
+import com.flp.control.App
+import com.flp.control.actors.ExecutingActor
 import com.flp.control.model._
 import com.flp.control.spark.SparkDriverActor
 import com.flp.control.storage.Storage
@@ -24,7 +24,7 @@ class AppInstanceActor(val appId: String) extends ExecutingActor {
 
   import util.State._
 
-  private val sparkDriverRef = Boot.actor(classOf[SparkDriverActor].getName)
+  private val sparkDriverRef = App.actor(classOf[SparkDriverActor].getName)
 
   private var runState: State = State.Loading
   private var predictor: Option[Predictor] = None
@@ -32,7 +32,7 @@ class AppInstanceActor(val appId: String) extends ExecutingActor {
   /**
     * Storage
     **/
-  private def storage(): ActorRef = Boot.actor(com.flp.control.storage.Storage.actorName)
+  private def storage(): ActorRef = App.actor(com.flp.control.storage.Storage.actorName)
 
   /**
     * Predicts 'most-probable' variation

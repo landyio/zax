@@ -2,8 +2,8 @@ package com.flp.control.service
 
 import akka.actor._
 import akka.util.Timeout
-import com.flp.control.akka.{Logging, AskSupport, DefaultTimeout}
-import com.flp.control.boot.Boot
+import com.flp.control.App
+import com.flp.control.actors.{Logging, AskSupport, DefaultTimeout}
 import com.flp.control.instance._
 import com.flp.control.model._
 import com.flp.control.service.serialization.JsonSerialization
@@ -227,8 +227,8 @@ trait PublicAppRoute extends AppRoute {
 
 trait AppRoute extends Service {
 
-  private val appsRef    = Boot.actor(AppInstances.actorName)
-  private val storageRef = Boot.actor(Storage.actorName)
+  private val appsRef    = App.actor(AppInstances.actorName)
+  private val storageRef = App.actor(Storage.actorName)
 
   import Storage.Commands.{StoreResponse, Store}
 

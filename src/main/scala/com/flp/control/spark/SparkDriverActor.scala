@@ -1,7 +1,7 @@
 package com.flp.control.spark
 
 import akka.pattern.pipe
-import com.flp.control.akka.ExecutingActor
+import com.flp.control.actors.ExecutingActor
 import com.flp.control.instance._
 import com.flp.control.spark.SparkDriverActor.Commands.{TrainClassifierResponse, TrainRegressorResponse}
 import org.apache.spark.SparkContext
