@@ -1,4 +1,4 @@
-package com.flp.control.actors
+package io.landy.app.actors
 
 import akka.actor.{Actor, ActorRef}
 import akka.event.LoggingAdapter

@@ -1,15 +1,15 @@
-package com.flp.control.instance
+package io.landy.app.instance
 
 import akka.actor.ActorRef
 import akka.pattern.pipe
 import akka.util.Timeout
-import com.flp.control.App
-import com.flp.control.actors.ExecutingActor
-import com.flp.control.model._
-import com.flp.control.driver.SparkDriverActor
-import com.flp.control.storage.Storage
-import com.flp.control.storage.Storage.Commands.{Update, UpdateResponse}
-import com.flp.control.util.{Reflect, Identity, boolean2Int}
+import io.landy.app.actors.ExecutingActor
+import io.landy.app.model._
+import io.landy.app.driver.SparkDriverActor
+import io.landy.app.storage.Storage
+import io.landy.app.storage.Storage.Commands.{Update, UpdateResponse}
+import io.landy.app.util.{Reflect, Identity, boolean2Int}
+import io.landy.app.App
 
 import scala.collection.BitSet
 import scala.compat.Platform
@@ -32,7 +32,7 @@ class AppInstanceActor(val appId: String) extends ExecutingActor {
   /**
     * Storage
     **/
-  private def storage(): ActorRef = App.actor(com.flp.control.storage.Storage.actorName)
+  private def storage(): ActorRef = App.actor(Storage.actorName)
 
   /**
     * Predicts 'most-probable' variation

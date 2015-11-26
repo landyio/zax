@@ -1,11 +1,11 @@
-package com.flp.control
+package io.landy.app
 
 import java.io.FileNotFoundException
 
 import akka.actor._
 import akka.io.IO
-import com.flp.control.actors.{AskSupport, ActorTracing, DefaultTimeout}
-import com.flp.control.driver.SparkDriverActor
+import io.landy.app.actors.{ActorTracing, AskSupport, DefaultTimeout}
+import io.landy.app.driver.SparkDriverActor
 import com.typesafe.config.ConfigFactory
 import org.apache.spark.{SparkConf, SparkContext}
 import spray.can.Http
@@ -21,7 +21,7 @@ class BootActor extends Actor with ActorTracing
 
   @inline
   private def startStorage(): Unit = {
-    import com.flp.control.storage.{Storage, StorageActor}
+    import io.landy.app.storage.{Storage, StorageActor}
     val ref: ActorRef = context.actorOf(
       props = Props[StorageActor],
       name = Storage.actorName
@@ -30,7 +30,7 @@ class BootActor extends Actor with ActorTracing
 
   @inline
   private def startAppInstances(): Unit = {
-    import com.flp.control.instance.{AppInstances, AppInstancesActor}
+    import io.landy.app.instance.{AppInstances, AppInstancesActor}
     val ref: ActorRef = context.actorOf(
       props = Props[AppInstancesActor],
       name = AppInstances.actorName
@@ -101,7 +101,7 @@ class BootActor extends Actor with ActorTracing
     val privateHttps: Boolean = conf.getBoolean("flp.server.private.https")
     val publicHttps: Boolean = conf.getBoolean("flp.server.public.https")
 
-    import com.flp.control.endpoints._
+    import io.landy.app.endpoints._
 
     val privateRef: ActorRef = context.actorOf(
       props = Props[PrivateEndpointActor],

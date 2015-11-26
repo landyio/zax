@@ -1,13 +1,13 @@
-package com.flp.control.endpoints
+package io.landy.app.endpoints
 
 import akka.actor._
 import akka.util.Timeout
-import com.flp.control.App
-import com.flp.control.actors.{Logging, AskSupport, DefaultTimeout}
-import com.flp.control.instance._
-import com.flp.control.model._
-import com.flp.control.endpoints.serialization.JsonSupport
-import com.flp.control.storage.Storage
+import io.landy.app.actors.{Logging, AskSupport, DefaultTimeout}
+import io.landy.app.instance._
+import io.landy.app.model._
+import io.landy.app.endpoints.serialization.JsonSupport
+import io.landy.app.storage.Storage
+import io.landy.app.App
 import spray.http.HttpHeaders.RawHeader
 import spray.http.MediaTypes._
 import spray.http._
@@ -163,7 +163,7 @@ trait PublicEndpoint extends Endpoint {
 
   @inline
   private[endpoints] def event(appId: String): Route = pathPrefix("event") {
-    import com.flp.control.model._
+    import io.landy.app.model._
     `options/origin` ~
       (path("start") & `json/post`) {
         entity(as[JsObject]) { json => clientIP { ip => {

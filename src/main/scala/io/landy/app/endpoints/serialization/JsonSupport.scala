@@ -1,7 +1,7 @@
-package com.flp.control.endpoints.serialization
+package io.landy.app.endpoints.serialization
 
-import com.flp.control.instance.{AppInstanceConfig, AppInstanceStatus}
-import com.flp.control.model._
+import io.landy.app.instance.{AppInstanceConfig, AppInstanceStatus}
+import io.landy.app.model._
 import spray.httpx.SprayJsonSupport
 import spray.json._
 

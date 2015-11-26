@@ -1,10 +1,10 @@
-package com.flp.control.storage
+package io.landy.app.storage
 
 import akka.pattern.pipe
-import com.flp.control.actors.ExecutingActor
-import com.flp.control.instance.AppInstance.State
-import com.flp.control.instance._
-import com.flp.control.model._
+import io.landy.app.actors.ExecutingActor
+import io.landy.app.instance.AppInstance.State
+import io.landy.app.instance._
+import io.landy.app.model._
 import com.typesafe.config.{Config, ConfigFactory}
 import reactivemongo.bson.DefaultBSONHandlers
 

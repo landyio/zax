@@ -1,7 +1,7 @@
-package com.flp.control.instance
+package io.landy.app.instance
 
 import akka.actor.{Props, ActorRef}
-import com.flp.control.actors.ExecutingActor
+import io.landy.app.actors.ExecutingActor
 
 /**
   * This actor is a 'mediator' of the whole apps orchestra

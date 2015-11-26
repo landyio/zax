@@ -1,6 +1,6 @@
-package com.flp.control.instance
+package io.landy.app.instance
 
-import com.flp.control.model.{UserDataDescriptor, UserIdentity, Variation}
+import io.landy.app.model.{UserDataDescriptor, UserIdentity, Variation}
 import org.apache.spark.mllib.linalg.{Vectors, DenseVector, Vector}
 import org.apache.spark.mllib.tree.model.DecisionTreeModel
 import org.apache.spark.rdd.RDD

@@ -1,4 +1,4 @@
-package com.flp.control.model
+package io.landy.app.model
 
 sealed trait Event {
   val appId: String

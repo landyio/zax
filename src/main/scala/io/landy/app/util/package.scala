@@ -1,4 +1,4 @@
-package com.flp.control
+package io.landy.app
 
 import scala.language.implicitConversions
 

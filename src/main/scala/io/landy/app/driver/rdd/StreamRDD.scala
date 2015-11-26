@@ -1,4 +1,4 @@
-package com.flp.control.driver.rdd
+package io.landy.app.driver.rdd
 
 import org.apache.spark.annotation.DeveloperApi
 import org.apache.spark.rdd.RDD
