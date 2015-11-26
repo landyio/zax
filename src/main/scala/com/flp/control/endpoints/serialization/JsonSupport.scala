@@ -1,4 +1,4 @@
-package com.flp.control.service.serialization
+package com.flp.control.endpoints.serialization
 
 import com.flp.control.instance.{AppInstanceConfig, AppInstanceStatus}
 import com.flp.control.model._
@@ -18,7 +18,7 @@ trait JsonSupport extends DefaultJsonProtocol with SprayJsonSupport {
   /**
     * `UserIdentity`
     */
-  private[service] implicit object UserIdentityJsonFormat extends RootJsonFormat[UserIdentity] {
+  private[endpoints] implicit object UserIdentityJsonFormat extends RootJsonFormat[UserIdentity] {
 
     override def write(o: UserIdentity): JsValue = o.params.toJson
 
@@ -28,7 +28,7 @@ trait JsonSupport extends DefaultJsonProtocol with SprayJsonSupport {
   /**
     * `Variation`
     */
-  private[service] implicit object VariationJsonFormat extends RootJsonFormat[Variation] {
+  private[endpoints] implicit object VariationJsonFormat extends RootJsonFormat[Variation] {
 
     override def write(o: Variation): JsValue = o.id.toJson
 
@@ -38,7 +38,7 @@ trait JsonSupport extends DefaultJsonProtocol with SprayJsonSupport {
   /**
     * `UserDataDescriptor`
     */
-  private[service] implicit object UserDataDescriptorJsonFormat extends RootJsonFormat[UserDataDescriptor] {
+  private[endpoints] implicit object UserDataDescriptorJsonFormat extends RootJsonFormat[UserDataDescriptor] {
 
     import UserDataDescriptor._
 
@@ -60,7 +60,7 @@ trait JsonSupport extends DefaultJsonProtocol with SprayJsonSupport {
   /**
     * `AppInstanceConfig`
     */
-  private[service] implicit object AppInstanceConfigJsonFormat extends RootJsonFormat[AppInstanceConfig] {
+  private[endpoints] implicit object AppInstanceConfigJsonFormat extends RootJsonFormat[AppInstanceConfig] {
 
     def write(config: AppInstanceConfig): JsValue = {
       import AppInstanceConfig._
@@ -85,7 +85,7 @@ trait JsonSupport extends DefaultJsonProtocol with SprayJsonSupport {
   /**
    * `AppInstanceStatus`
    */
-  private[service] implicit object AppInstanceStatusJsonFormat extends RootJsonFormat[AppInstanceStatus] {
+  private[endpoints] implicit object AppInstanceStatusJsonFormat extends RootJsonFormat[AppInstanceStatus] {
     def write(status: AppInstanceStatus): JsObject =
       JsObject(
         "runState" -> JsString(status.runState.toString),
@@ -104,7 +104,7 @@ trait JsonSupport extends DefaultJsonProtocol with SprayJsonSupport {
   /**
     * `StartEvent`
     */
-  private[service] implicit object StartEventJsonFormat extends RootJsonFormat[StartEvent] {
+  private[endpoints] implicit object StartEventJsonFormat extends RootJsonFormat[StartEvent] {
     import Event._
 
     def write(event: StartEvent): JsObject =
@@ -128,7 +128,7 @@ trait JsonSupport extends DefaultJsonProtocol with SprayJsonSupport {
   /**
     * `PredictEvent`
     */
-  private[service] implicit object PredictEventJsonFormat extends RootJsonFormat[PredictEvent] {
+  private[endpoints] implicit object PredictEventJsonFormat extends RootJsonFormat[PredictEvent] {
     import Event._
 
     def write(event: PredictEvent): JsObject =
@@ -150,7 +150,7 @@ trait JsonSupport extends DefaultJsonProtocol with SprayJsonSupport {
   /**
     * `FinishEvent`
     */
-  private[service] implicit object FinishEventJsonFormat extends RootJsonFormat[FinishEvent] {
+  private[endpoints] implicit object FinishEventJsonFormat extends RootJsonFormat[FinishEvent] {
     import Event._
 
     def write(event: FinishEvent): JsObject = JsObject(

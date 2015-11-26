@@ -1,4 +1,4 @@
-package com.flp.control.service
+package com.flp.control.endpoints
 
 import akka.actor._
 import akka.util.Timeout
@@ -6,7 +6,7 @@ import com.flp.control.App
 import com.flp.control.actors.{Logging, AskSupport, DefaultTimeout}
 import com.flp.control.instance._
 import com.flp.control.model._
-import com.flp.control.service.serialization.JsonSupport
+import com.flp.control.endpoints.serialization.JsonSupport
 import com.flp.control.storage.Storage
 import spray.http.HttpHeaders.RawHeader
 import spray.http.MediaTypes._
@@ -18,15 +18,15 @@ import spray.routing.authentication._
 import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Failure, Success}
 
-class PrivateHttpRouteActor extends HttpServiceActor  with PrivateAppRoute
-                                                      with ActorLogging {
+class PrivateEndpointActor extends HttpServiceActor with PrivateEndpoint
+                                                    with ActorLogging {
 
   def receive = runRoute(route)
   val route: Route = appRoute
 
 }
 
-class PublicHttpRouteActor extends HttpServiceActor with PublicAppRoute
+class PublicEndpointActor extends HttpServiceActor  with PublicEndpoint
                                                     with ActorLogging {
 
   def receive = runRoute(route)
@@ -35,12 +35,12 @@ class PublicHttpRouteActor extends HttpServiceActor with PublicAppRoute
 }
 
 
-trait PrivateAppRoute extends PublicAppRoute {
+trait PrivateEndpoint extends PublicEndpoint {
 
   import Storage.Persisters._
 
   @inline
-  private[service] def control(appId: String, principal: Principal): Route = pathPrefix("control") {
+  private[endpoints] def control(appId: String, principal: Principal): Route = pathPrefix("control") {
     placeholder ~
       (path("config") & `json/get`) {
         extract(ctx => ctx) { ctx => {
@@ -129,7 +129,7 @@ trait PrivateAppRoute extends PublicAppRoute {
       }
   }
 
-  override private[service] def appRoute(appId: String): Route = {
+  override private[endpoints] def appRoute(appId: String): Route = {
     super.appRoute(appId) ~
       //authenticate(authenticator) {
       //  principal: Principal => {
@@ -142,12 +142,12 @@ trait PrivateAppRoute extends PublicAppRoute {
 }
 
 
-trait PublicAppRoute extends AppRoute {
+trait PublicEndpoint extends Endpoint {
 
   import Storage.Persisters._
 
   @inline
-  private[service] def predict(appId: String, identity: UserIdentity): Future[Variation] = {
+  private[endpoints] def predict(appId: String, identity: UserIdentity): Future[Variation] = {
     import AppInstance.Commands.{PredictRequest, PredictResponse, predictTimeout}
 
     askApp[PredictResponse](appId, PredictRequest(identity))(timeout = predictTimeout)
@@ -155,14 +155,14 @@ trait PublicAppRoute extends AppRoute {
   }
 
   @inline
-  private[service] def info(appId: String): Route = (path("info") & get) {
+  private[endpoints] def info(appId: String): Route = (path("info") & get) {
     respondWithMediaType(`application/json`) {
       complete("")
     }
   }
 
   @inline
-  private[service] def event(appId: String): Route = pathPrefix("event") {
+  private[endpoints] def event(appId: String): Route = pathPrefix("event") {
     import com.flp.control.model._
     `options/origin` ~
       (path("start") & `json/post`) {
@@ -218,14 +218,14 @@ trait PublicAppRoute extends AppRoute {
       }
   }
 
-  override private[service] def appRoute(appId: String): Route =  {
+  override private[endpoints] def appRoute(appId: String): Route =  {
       info(appId) ~
         event(appId)
   }
 
 }
 
-trait AppRoute extends Service {
+trait Endpoint extends Service {
 
   private val appsRef    = App.actor(AppInstances.actorName)
   private val storageRef = App.actor(Storage.actorName)
@@ -233,7 +233,7 @@ trait AppRoute extends Service {
   import Storage.Commands.{StoreResponse, Store}
 
   @inline
-  private[service] def store[E](element: E)(implicit persister: Storage.PersisterW[E], timeout: Timeout): Future[StoreResponse] = {
+  private[endpoints] def store[E](element: E)(implicit persister: Storage.PersisterW[E], timeout: Timeout): Future[StoreResponse] = {
     ask[StoreResponse](storageRef, Store(element)(persister = persister))
       .andThen {
         case Success(r) =>
@@ -242,21 +242,21 @@ trait AppRoute extends Service {
   }
 
   @inline
-  private[service] def askApps[T](message: Any)(implicit timeout: Timeout): Future[T] =
+  private[endpoints] def askApps[T](message: Any)(implicit timeout: Timeout): Future[T] =
     ask[T](appsRef, message)
 
   @inline
-  private[service] def askApp[T](appId: String, message: AppInstanceMessage[T])(implicit timeout: Timeout): Future[T] =
+  private[endpoints] def askApp[T](appId: String, message: AppInstanceMessage[T])(implicit timeout: Timeout): Future[T] =
     askApps[T](AppInstances.Commands.Forward(appId, message))
 
-  private[service] val appRoute: Route = pathPrefix("app" / Segment) {
+  private[endpoints] val appRoute: Route = pathPrefix("app" / Segment) {
     segment: String => {
       val appId = AppInstance.fixId(segment)
       appRoute(appId)
     }
   }
 
-  private[service] def appRoute(appId: String): Route
+  private[endpoints] def appRoute(appId: String): Route
 }
 
 

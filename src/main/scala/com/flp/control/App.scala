@@ -101,16 +101,16 @@ class BootActor extends Actor with ActorTracing
     val privateHttps: Boolean = conf.getBoolean("flp.server.private.https")
     val publicHttps: Boolean = conf.getBoolean("flp.server.public.https")
 
-    import com.flp.control.service._
+    import com.flp.control.endpoints._
 
     val privateRef: ActorRef = context.actorOf(
-      props = Props[PrivateHttpRouteActor],
-      name  = classOf[PrivateHttpRouteActor].getName
+      props = Props[PrivateEndpointActor],
+      name  = classOf[PrivateEndpointActor].getName
     )
 
     val publicRef: ActorRef = context.actorOf(
-      props = Props[PublicHttpRouteActor],
-      name  = classOf[PublicHttpRouteActor].getName
+      props = Props[PublicEndpointActor],
+      name  = classOf[PublicEndpointActor].getName
     )
 
     implicit val system: ActorSystem = context.system
