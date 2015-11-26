@@ -23,8 +23,8 @@ lazy val common = Seq(
   scalacOptions     := Seq("-target:jvm-1.7")
                     ++ Seq("-encoding", "utf8")
                     ++ Seq("-unchecked", "-deprecation", "-feature")
-                    ++ Seq("-optimise")
-                    ++ Seq("-Xlog-implicits"),
+                    ++ Seq("-optimise"),
+//                    ++ Seq("-Xlog-implicits"),
 //                    ++ Seq("-Yinline-warnings")
 //                    ++ Seq("-Xexperimental")
 

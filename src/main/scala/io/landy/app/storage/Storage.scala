@@ -21,8 +21,8 @@ class StorageActor extends ExecutingActor {
 
   private val config: Config = ConfigFactory.load()
 
-  private val nodes: Seq[String]  = config.getString("flp.mongo.hosts").split(",").toSeq.map { s => s.trim }
-  private val db: String          = config.getString("flp.mongo.database")
+  private val nodes: Seq[String]  = config.getString("landy.mongo.hosts").split(",").toSeq.map { s => s.trim }
+  private val db: String          = config.getString("landy.mongo.database")
 
   private val driver: MongoDriver = new MongoDriver()
 

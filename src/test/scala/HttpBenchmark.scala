@@ -1,7 +1,6 @@
-import akka.actor.{Props, ActorRef, ActorSystem}
-import com.flp.control.akka.DefaultTimeout
 
-import org.scalameter._
+
+//import org.scalameter._
 
 
 object HttpBenchmark /*extends PerformanceTest.Quickbenchmark with DefaultTimeout*/ {

@@ -38,7 +38,7 @@ private object ActorTracing {
 
   private val TRACE_ASCRIPTION: String = "TRACE"
 
-  private val param   = "flp.akka.trace"
+  private val param   = "landy.akka.trace"
   private val config  = ConfigFactory.load()
 
   private val enabled = config.hasPath(param) && config.getBoolean(param)

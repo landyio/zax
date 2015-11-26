@@ -92,14 +92,14 @@ class BootActor extends Actor with ActorTracing
 
     val conf = ConfigFactory.load()
 
-    val privateHost: String = conf.getString("flp.server.private.host")
-    val privatePort: Int = conf.getInt("flp.server.private.port")
+    val privateHost: String = conf.getString("landy.server.private.host")
+    val privatePort: Int = conf.getInt("landy.server.private.port")
 
-    val publicHost: String = conf.getString("flp.server.public.host")
-    val publicPort: Int = conf.getInt("flp.server.public.port")
+    val publicHost: String = conf.getString("landy.server.public.host")
+    val publicPort: Int = conf.getInt("landy.server.public.port")
 
-    val privateHttps: Boolean = conf.getBoolean("flp.server.private.https")
-    val publicHttps: Boolean = conf.getBoolean("flp.server.public.https")
+    val privateHttps: Boolean = conf.getBoolean("landy.server.private.https")
+    val publicHttps: Boolean = conf.getBoolean("landy.server.public.https")
 
     import io.landy.app.endpoints._
 
@@ -144,7 +144,7 @@ class BootActor extends Actor with ActorTracing
     val conf = ConfigFactory.load()
 
     val sparkConf = new SparkConf() .setMaster    (conf.getString("spark.master"))
-                                    .setAppName   (conf.getString("flp.name"))
+                                    .setAppName   (conf.getString("landy.name"))
 
     val sparkCtx  = new SparkContext(sparkConf)
 
@@ -191,7 +191,7 @@ object App extends DefaultTimeout with AskSupport {
     case class Shutdown()
   }
 
-  implicit val system = ActorSystem("flp")
+  implicit val system = ActorSystem("landy")
 
   sys.addShutdownHook { system.shutdown() }
 
