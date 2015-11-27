@@ -12,7 +12,7 @@ import scala.util.Random
 
 trait Predictor {
 
-  val config: AppInstanceConfig
+  val config: Instance.Config
 
   def variations:           Seq[Variation]          = config.variations
   def userDataDescriptors:  Seq[UserDataDescriptor] = config.userDataDescriptors
@@ -28,7 +28,7 @@ trait Predictor {
 }
 
 object Predictor {
-  def apply(config: AppInstanceConfig): Predictor = {
+  def apply(config: Instance.Config): Predictor = {
     config.model match {
       case Some(Left(m))  => buildClassifier(config, m)
       case Some(Right(m)) => buildRegressor(config, m)
@@ -36,7 +36,7 @@ object Predictor {
     }
   }
 
-  def random(config: AppInstanceConfig): Predictor =
+  def random(config: Instance.Config): Predictor =
     buildRandom(config)
 
   /**
@@ -44,7 +44,7 @@ object Predictor {
     *
     * @return predictor
     **/
-  private def buildRandom(config: AppInstanceConfig) =
+  private def buildRandom(config: Instance.Config) =
     Regressor(config)
 
   /**
@@ -52,7 +52,7 @@ object Predictor {
     *
     * @return predictor
     */
-  private def buildClassifier(config: AppInstanceConfig, model: ClassificationModel): Predictor =
+  private def buildClassifier(config: Instance.Config, model: ClassificationModel): Predictor =
     Classificator(config, model)
 
   /**
@@ -60,7 +60,7 @@ object Predictor {
     *
     * @return predictor
     */
-  private def buildRegressor(config: AppInstanceConfig, model: RegressionModel): Predictor =
+  private def buildRegressor(config: Instance.Config, model: RegressionModel): Predictor =
     Regressor(config, model)
 }
 
@@ -108,11 +108,11 @@ trait Regressor extends Predictor {
   * Classificators
   */
 object Classificator {
-  def apply(config: AppInstanceConfig, model: ClassificationModel) =
+  def apply(config: Instance.Config, model: ClassificationModel) =
     new ClassificatorImpl(config, model)
 }
 
-private[instance] class ClassificatorImpl(override val config:  AppInstanceConfig,
+private[instance] class ClassificatorImpl(override val config:  Instance.Config,
                                           override val model:   ClassificationModel)
   extends Classificator
 
@@ -122,18 +122,18 @@ private[instance] class ClassificatorImpl(override val config:  AppInstanceConfi
   */
 object Regressor {
 
-  def apply(config: AppInstanceConfig) =
+  def apply(config: Instance.Config) =
     new RegressorStub(config)
 
-  def apply(config: AppInstanceConfig, model: RegressionModel) =
+  def apply(config: Instance.Config, model: RegressionModel) =
     new RegressorImpl(config, model)
 }
 
-private[instance] class RegressorImpl(override val config:  AppInstanceConfig,
+private[instance] class RegressorImpl(override val config:  Instance.Config,
                                       override val model:   RegressionModel)
   extends Regressor
 
-private[instance] class RegressorStub(override val config: AppInstanceConfig)
+private[instance] class RegressorStub(override val config: Instance.Config)
   extends RegressorImpl(config, RegressionModel.random)
 
 

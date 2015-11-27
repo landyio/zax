@@ -1,6 +1,6 @@
 package io.landy.app.endpoints.serialization
 
-import io.landy.app.instance.{AppInstanceConfig, AppInstanceStatus}
+import io.landy.app.instance.Instance
 import io.landy.app.model._
 import spray.httpx.SprayJsonSupport
 import spray.json._
@@ -58,12 +58,12 @@ trait JsonSupport extends DefaultJsonProtocol with SprayJsonSupport {
   }
 
   /**
-    * `AppInstanceConfig`
+    * `Instance.Config`
     */
-  private[endpoints] implicit object AppInstanceConfigJsonFormat extends RootJsonFormat[AppInstanceConfig] {
+  private[endpoints] implicit object AppInstanceConfigJsonFormat extends RootJsonFormat[Instance.Config] {
 
-    def write(config: AppInstanceConfig): JsValue = {
-      import AppInstanceConfig._
+    def write(config: Instance.Config): JsValue = {
+      import Instance.Config._
 
       JsObject(
         `variations`  -> config.variations.toJson,
@@ -71,22 +71,22 @@ trait JsonSupport extends DefaultJsonProtocol with SprayJsonSupport {
       )
     }
 
-    def read(value: JsValue): AppInstanceConfig = {
-      import AppInstanceConfig._
+    def read(value: JsValue): Instance.Config = {
+      import Instance.Config._
 
       { for (
           vs <- field[Seq[Variation]]           (value, `variations`);
           ds <- field[Seq[UserDataDescriptor]]  (value, `descriptors`)
-        ) yield AppInstanceConfig(variations = vs, userDataDescriptors = ds, model = None)
+        ) yield Instance.Config(variations = vs, userDataDescriptors = ds, model = None)
       } get
     }
   }
 
   /**
-   * `AppInstanceStatus`
+   * `Instance.Status`
    */
-  private[endpoints] implicit object AppInstanceStatusJsonFormat extends RootJsonFormat[AppInstanceStatus] {
-    def write(status: AppInstanceStatus): JsObject =
+  private[endpoints] implicit object AppInstanceStatusJsonFormat extends RootJsonFormat[Instance.Status] {
+    def write(status: Instance.Status): JsObject =
       JsObject(
         "runState" -> JsString(status.runState.toString),
         "events" -> JsObject(
@@ -97,8 +97,8 @@ trait JsonSupport extends DefaultJsonProtocol with SprayJsonSupport {
         )
       )
 
-    def read(value: JsValue): AppInstanceStatus =
-      AppInstanceStatus.empty
+    def read(value: JsValue): Instance.Status =
+      Instance.Status.empty
   }
 
   /**

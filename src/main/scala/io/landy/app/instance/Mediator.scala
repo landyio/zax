@@ -6,23 +6,23 @@ import io.landy.app.actors.ExecutingActor
 /**
   * This actor is a 'mediator' of the whole apps orchestra
   */
-class AppInstancesActor extends ExecutingActor {
-  import AppInstances._
+class MediatorActor extends ExecutingActor {
+  import Mediator._
 
   @inline
-  private def appRef(appId: String): Option[ActorRef] = context.child(name = AppInstance.actorName(appId))
+  private def appRef(appId: String): Option[ActorRef] = context.child(name = Instance.actorName(appId))
 
   @inline
   private def appRef(appId: String, forceStart: Boolean): Option[ActorRef] =
     appRef(appId).orElse(
       if (forceStart)
-        Some(forceStartAppInstance(appId))
+        Some(forceStartInstance(appId))
       else
         None
     )
 
   @inline
-  private def startAppInstance(appId: String): Boolean = {
+  private def startInstance(appId: String): Boolean = {
     appRef(appId, forceStart = true) match {
       case Some(_) => true
       case None => false
@@ -30,7 +30,7 @@ class AppInstancesActor extends ExecutingActor {
   }
 
   @inline
-  private def stopAppInstance(appId: String): Boolean = {
+  private def stopInstance(appId: String): Boolean = {
     appRef(appId) collect {
       case ref => context.stop(ref)
     }
@@ -38,18 +38,18 @@ class AppInstancesActor extends ExecutingActor {
   }
 
   @inline
-  private def forceStartAppInstance(appId: String): ActorRef = context.actorOf(
-    props = Props(classOf[AppInstanceActor], appId),
-    name = AppInstance.actorName(appId)
+  private def forceStartInstance(appId: String): ActorRef = context.actorOf(
+    props = Props(classOf[InstanceActor], appId),
+    name = Instance.actorName(appId)
   )
 
   override def preStart(): Unit = {
-    // TODO: read AppInstances, forEach(appId => self ? Control.Start.Request(appId))
+    // TODO(kudinkin): pre-start instances?
   }
 
   def receive: Receive = trace {
       case Commands.Forward(appId, message) =>
-        appRef(appId, forceStart = message.isInstanceOf[AppInstanceAutoStartMessage[_]]) match {
+        appRef(appId, forceStart = message.isInstanceOf[Instance.AutoStartMessage[_]]) match {
           case Some(appRef) => appRef.forward(message)
           case None         => sender ! akka.actor.Status.Failure(new NoSuchElementException(appId))
         }
@@ -57,12 +57,12 @@ class AppInstancesActor extends ExecutingActor {
 
 }
 
-object AppInstances {
+object Mediator {
 
-  val actorName: String = "app-instances"
+  val actorName: String = "mediator"
 
   object Commands {
-    case class Forward[R](appId: String, message: AppInstanceMessage[R])
+    case class Forward[R](appId: String, message: Instance.Message[R])
   }
 
 }

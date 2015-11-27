@@ -2,7 +2,7 @@ package io.landy.app.storage
 
 import akka.pattern.pipe
 import io.landy.app.actors.ExecutingActor
-import io.landy.app.instance.AppInstance.State
+import io.landy.app.instance.Instance.State
 import io.landy.app.instance._
 import io.landy.app.model._
 import com.typesafe.config.{Config, ConfigFactory}
@@ -404,12 +404,12 @@ object Storage extends DefaultBSONHandlers {
       import Picklers.{featureTypePickler, algoPickler}
 
       implicit val binaryPersister =
-        new BSONReader[BSONBinary, AppInstanceConfig.Model] with BSONWriter[AppInstanceConfig.Model, BSONBinary] {
+        new BSONReader[BSONBinary, Instance.Config.Model] with BSONWriter[Instance.Config.Model, BSONBinary] {
 
           import scala.pickling.Defaults._
           import scala.pickling.binary._
 
-          override def write(model: AppInstanceConfig.Model): BSONBinary =
+          override def write(model: Instance.Config.Model): BSONBinary =
             BSONBinary(
               model match {
                 case Left(e)  => e.asInstanceOf[SparkDecisionTreeClassificationModel].pickle.value
@@ -418,7 +418,7 @@ object Storage extends DefaultBSONHandlers {
               Subtype.UserDefinedSubtype
             )
 
-          override def read(bson: BSONBinary): AppInstanceConfig.Model =
+          override def read(bson: BSONBinary): Instance.Config.Model =
             bson.byteArray.unpickle[PickleableModel] match {
               case c @ SparkDecisionTreeClassificationModel(_, _) => Left(c)
               case r @ SparkDecisionTreeRegressionModel(_, _)     => Right(r)
@@ -428,12 +428,12 @@ object Storage extends DefaultBSONHandlers {
         }
 
       implicit val jsonPersister =
-          new BSONReader[BSONString, AppInstanceConfig.Model] with BSONWriter[AppInstanceConfig.Model, BSONString] {
+          new BSONReader[BSONString, Instance.Config.Model] with BSONWriter[Instance.Config.Model, BSONString] {
 
           import scala.pickling.Defaults._
           import scala.pickling.json._
 
-          override def write(model: AppInstanceConfig.Model): BSONString =
+          override def write(model: Instance.Config.Model): BSONString =
             BSONString(
               model match {
                 case Left(e)  => e.asInstanceOf[SparkDecisionTreeClassificationModel].pickle.value
@@ -441,7 +441,7 @@ object Storage extends DefaultBSONHandlers {
               }
             )
 
-          override def read(bson: BSONString): AppInstanceConfig.Model =
+          override def read(bson: BSONString): Instance.Config.Model =
             bson.value.unpickle[PickleableModel] match {
               case c @ SparkDecisionTreeClassificationModel(_, _) => Left(c)
               case r @ SparkDecisionTreeRegressionModel(_, _)     => Right(r)
@@ -452,7 +452,7 @@ object Storage extends DefaultBSONHandlers {
     }
 
     implicit val appInstanceStatePersister =
-      new BSONDocumentReader[AppInstance.State] with BSONDocumentWriter[AppInstance.State] {
+      new BSONDocumentReader[Instance.State] with BSONDocumentWriter[Instance.State] {
 
         override def write(s: State): BSONDocument =
           s match {
@@ -471,7 +471,7 @@ object Storage extends DefaultBSONHandlers {
           }
 
         override def read(bson: BSONDocument): State = {
-          import AppInstance.Epoch
+          import Instance.Epoch
 
           bson.getAs[String](State.`name`).collect {
             case State.Predicting.typeName =>
@@ -490,12 +490,12 @@ object Storage extends DefaultBSONHandlers {
     //
 
     implicit val appInstanceConfigPersister =
-      new BSONDocumentReader[AppInstanceConfig] with BSONDocumentWriter[AppInstanceConfig] {
-        import AppInstanceConfig._
+      new BSONDocumentReader[Instance.Config] with BSONDocumentWriter[Instance.Config] {
+        import Instance.Config._
 
         import Model.binaryPersister
 
-        override def write(c: AppInstanceConfig): BSONDocument = {
+        override def write(c: Instance.Config): BSONDocument = {
           BSONDocument(
             `variations`  -> c.variations,
             `descriptors` -> c.userDataDescriptors,
@@ -503,36 +503,36 @@ object Storage extends DefaultBSONHandlers {
           )
         }
 
-        override def read(bson: BSONDocument): AppInstanceConfig = {
+        override def read(bson: BSONDocument): Instance.Config = {
           { for (
               vs    <- bson.getAs[Seq[Variation]]           (`variations`);
               ds    <- bson.getAs[Seq[UserDataDescriptor]]  (`descriptors`)
-            ) yield AppInstanceConfig(
+            ) yield Instance.Config(
                 variations          = vs.toList,
                 userDataDescriptors = ds.toList,
-                model               = bson.getAs[AppInstanceConfig.Model](`model`)
+                model               = bson.getAs[Instance.Config.Model](`model`)
               )
           }.get
         }
       }
 
     implicit val appInstanceConfigRecordPersister =
-      new Persister[AppInstanceConfig.Record] {
-        import AppInstanceConfig.Record._
+      new Persister[Instance.Config.Record] {
+        import Instance.Config.Record._
         val collection: String = "appconfig"
 
-        override def write(t: AppInstanceConfig.Record): BSONDocument =
+        override def write(t: Instance.Config.Record): BSONDocument =
           BSONDocument(
             `_id`       -> BSONObjectID(t.appId),
             `runState`  -> BSON.writeDocument(t.runState),
             `config`    -> BSON.writeDocument(t.config)
           )
 
-        override def read(bson: BSONDocument): AppInstanceConfig.Record =
-          AppInstanceConfig.Record(
+        override def read(bson: BSONDocument): Instance.Config.Record =
+          Instance.Config.Record(
             appId     = bson.getAs[BSONObjectID]      (`_id`)      .map { i => i.stringify } getOrElse { "" },
             runState  = bson.getAs[State]             (`runState`) .get, // .getOrElse { AppInstance.State.Suspended },
-            config    = bson.getAs[AppInstanceConfig] (`config`)   .get
+            config    = bson.getAs[Instance.Config] (`config`)   .get
           )
       }
 

@@ -18,9 +18,9 @@ import scala.util.{Failure, Success}
 
 import scala.language.{implicitConversions, postfixOps}
 
-class AppInstanceActor(val appId: String) extends ExecutingActor {
+class InstanceActor(val appId: String) extends ExecutingActor {
 
-  import AppInstance._
+  import Instance._
 
   import util.State._
 
@@ -103,9 +103,9 @@ class AppInstanceActor(val appId: String) extends ExecutingActor {
 
                 import Storage.Persisters.{appInstanceConfigPersister, appInstanceConfigRecordPersister}
 
-                ask[UpdateResponse](this.storage(), Update[AppInstanceConfig.Record](appId) {
-                  AppInstanceConfig.Record.`config` ->
-                    getConfig.copy(model = Some(Right(model.asInstanceOf[AppInstanceConfig.RegressionModel])))
+                ask[UpdateResponse](this.storage(), Update[Instance.Config.Record](appId) {
+                  Instance.Config.Record.`config` ->
+                    getConfig.copy(model = Some(Right(model.asInstanceOf[Instance.Config.RegressionModel])))
                 })
 
                 Some(error)
@@ -152,7 +152,7 @@ class AppInstanceActor(val appId: String) extends ExecutingActor {
   /**
     * Returns current app-instance getStatus
     **/
-  private def getStatus(from: Epoch = 0l): Future[AppInstanceStatus] = {
+  private def getStatus(from: Epoch = 0l): Future[Instance.Status] = {
 
     import Storage.Persisters._
     import Storage.Commands.{Count, CountResponse}
@@ -180,20 +180,20 @@ class AppInstanceActor(val appId: String) extends ExecutingActor {
         )).mapTo[CountResponse]
           .map(x => x.count)
 
-    } yield AppInstanceStatus(state, eventsAllStart, eventsAllFinish)
+    } yield Instance.Status(state, eventsAllStart, eventsAllFinish)
   }
 
 
   // TODO(kudinkin): move config out of predictor
-  private def getConfig: AppInstanceConfig =
-    predictor.collect { case p => p.config } get // getOrElse AppInstanceConfig.sentinel
+  private def getConfig: Instance.Config =
+    predictor.collect { case p => p.config } get // getOrElse Instance.Config.sentinel
 
-  private def reloadConfig(): Future[AppInstanceConfig.Record] = {
+  private def reloadConfig(): Future[Instance.Config.Record] = {
     import Storage.Persisters._
     import Storage.Commands.{Load, LoadResponse}
 
     val f = { for (
-      r <- ask[LoadResponse[AppInstanceConfig.Record]](this.storage(), Load[AppInstanceConfig.Record](appId))
+      r <- ask[LoadResponse[Instance.Config.Record]](this.storage(), Load[Instance.Config.Record](appId))
     ) yield r.seq.collectFirst(Identity.partial()) } map {
       case Some(c)  => c
       case None     => throw new Exception(s"Failed to retrieve app's {#${appId}} configuration!")
@@ -206,7 +206,7 @@ class AppInstanceActor(val appId: String) extends ExecutingActor {
     }
   }
 
-  private def applyConfig(r: AppInstanceConfig.Record): Unit = {
+  private def applyConfig(r: Instance.Config.Record): Unit = {
     updateState(r.runState) match {
       case State.Predicting(_) =>
         predictor = Some(Predictor(r.config))
@@ -251,11 +251,11 @@ class AppInstanceActor(val appId: String) extends ExecutingActor {
     *
     * @param state target state being switched to
     */
-  private def switchState(state: State): Future[AppInstanceConfig.Record] = {
+  private def switchState(state: State): Future[Instance.Config.Record] = {
     import Storage.Persisters._
 
-    ask[UpdateResponse](this.storage(), Update[AppInstanceConfig.Record](appId) {
-      AppInstanceConfig.Record.`runState` -> state
+    ask[UpdateResponse](this.storage(), Update[Instance.Config.Record](appId) {
+      Instance.Config.Record.`runState` -> state
     }).map      { r => r.ok }
       .andThen  {
         case Failure(t) => log.error(t, s"Failed to switch state to '${state}'!")
@@ -304,7 +304,7 @@ class AppInstanceActor(val appId: String) extends ExecutingActor {
   // Controlling hooks
   //
 
-  private def stop(): Future[AppInstanceStatus] =
+  private def stop(): Future[Instance.Status] =
     switchState(State.Suspended).flatMap { _ => getStatus() }
 
   override def receive: Receive = trace {
@@ -367,69 +367,10 @@ class AppInstanceActor(val appId: String) extends ExecutingActor {
   }
 }
 
-case class AppInstanceStatus(
-  runState: AppInstance.State,
-  eventsAllStart    : Int,
-  eventsAllFinish   : Int
-)
-
-object AppInstanceStatus {
-  val empty: AppInstanceStatus =
-    AppInstanceStatus(
-      runState          = AppInstance.State.NoData,
-      eventsAllStart    = 0,
-      eventsAllFinish   = 0
-    )
-}
-
-/**
-  * App-instance's configuration
-  *
-  * @param variations available variations
-  * @param userDataDescriptors  user-data descriptors converting its identity into point
-  *                             in high-dimensional feature-space
-  */
-case class AppInstanceConfig(
-  variations:           Seq[Variation],
-  userDataDescriptors:  Seq[UserDataDescriptor],
-  model:                Option[AppInstanceConfig.Model]
-)
 
 
-// TODO(kudinkin): Merge `AppInstanceConfig` & `AppInstanceConfig.Record`
-object AppInstanceConfig {
 
-  type ClassificationModel  = SparkClassificationModel[_ <: SparkModel.Model]
-  type RegressionModel      = SparkRegressionModel[_ <: SparkModel.Model]
-
-  type Model = Either[ClassificationModel, RegressionModel]
-
-  val `variations`  = "variations"
-  val `descriptors` = "descriptors"
-  val `model`       = "model"
-
-  val sentinel = AppInstanceConfig(variations = Seq(), userDataDescriptors = Seq(), model = None)
-
-  case class Record(
-    appId:    String,
-    runState: AppInstance.State = AppInstance.State.NoData,
-    config:   AppInstanceConfig = AppInstanceConfig.sentinel
-  )
-
-  object Record {
-    val `config`    = "config"
-    val `runState`  = "runState"
-
-    def notFound(appId: String) =
-      Record(appId, AppInstance.State.NoData, AppInstanceConfig.sentinel)
-  }
-}
-
-trait AppInstanceMessage[Response]
-
-trait AppInstanceAutoStartMessage[Response] extends AppInstanceMessage[Response]
-
-object AppInstance {
+object Instance {
 
   import org.apache.commons.lang3.StringUtils._
   import reactivemongo.bson._
@@ -453,9 +394,7 @@ object AppInstance {
     * @param ts (server's) timestamp of the event associated with the epoch
     */
   implicit class Epoch(val ts: Long) {
-
     override def toString: String = s"{ Epoch: #${ts} }"
-
   }
 
   object Epoch {
@@ -463,10 +402,53 @@ object AppInstance {
   }
 
 
-  /****************************/
-  /** STATES                  */
-  /****************************/
+  /**
+    * Instance's configuration
+    *
+    * @param variations available variations
+    * @param userDataDescriptors  user-data descriptors converting its identity into point
+    *                             in high-dimensional feature-space
+    */
+  case class Config(
+    variations:           Seq[Variation],
+    userDataDescriptors:  Seq[UserDataDescriptor],
+    model:                Option[Instance.Config.Model]
+  )
 
+
+  // TODO(kudinkin): Merge `Instance.Config` & `Instance.Config.Record`
+  object Config {
+
+    type ClassificationModel  = SparkClassificationModel[_ <: SparkModel.Model]
+    type RegressionModel      = SparkRegressionModel[_ <: SparkModel.Model]
+
+    type Model = Either[ClassificationModel, RegressionModel]
+
+    val `variations`  = "variations"
+    val `descriptors` = "descriptors"
+    val `model`       = "model"
+
+    val sentinel = Instance.Config(variations = Seq(), userDataDescriptors = Seq(), model = None)
+
+    case class Record(
+      appId:    String,
+      runState: Instance.State = Instance.State.NoData,
+      config:   Instance.Config = Instance.Config.sentinel
+    )
+
+    object Record {
+      val `config`    = "config"
+      val `runState`  = "runState"
+
+      def notFound(appId: String) =
+        Record(appId, Instance.State.NoData, Instance.Config.sentinel)
+    }
+  }
+
+
+  /**
+    * Instance's state
+    */
   sealed trait State extends StateEx
 
   trait StateEx {
@@ -523,28 +505,56 @@ object AppInstance {
 
   }
 
+
+  /**
+    * Instance's status (reports)
+    *
+    * @deprecated
+    */
+  case class Status(
+    runState: Instance.State,
+    eventsAllStart    : Int,
+    eventsAllFinish   : Int
+  )
+
+  object Status {
+    val empty: Instance.Status =
+      Instance.Status(
+        runState          = Instance.State.NoData,
+        eventsAllStart    = 0,
+        eventsAllFinish   = 0
+      )
+  }
+
+
+  trait Message[Response]
+  trait AutoStartMessage[Response] extends Message[Response]
+
+  /**
+    * Commands accepted by instance
+    */
   object Commands {
 
     private[instance] case class Suicide()
 
-    case class ReloadConfig() extends AppInstanceAutoStartMessage[AppInstanceConfig]
+    case class ReloadConfig() extends AutoStartMessage[Instance.Config]
 
-    case class StatusRequest() extends AppInstanceAutoStartMessage[AppInstanceStatus]
-    case class ConfigRequest() extends AppInstanceAutoStartMessage[AppInstanceConfig]
+    case class StatusRequest() extends AutoStartMessage[Instance.Status]
+    case class ConfigRequest() extends AutoStartMessage[Instance.Config]
 
-    trait AppInstanceChangeRunStateMessage extends AppInstanceAutoStartMessage[AppInstanceStatus]
+    trait AppInstanceChangeRunStateMessage extends AutoStartMessage[Instance.Status]
 
     case class StartRequest() extends AppInstanceChangeRunStateMessage
     case class StopRequest() extends AppInstanceChangeRunStateMessage
     
     val predictTimeout: Timeout = 500.milliseconds
 
-    case class PredictRequest(identity: UserIdentity) extends AppInstanceAutoStartMessage[PredictResponse]
+    case class PredictRequest(identity: UserIdentity) extends AutoStartMessage[PredictResponse]
     case class PredictResponse(variation: Variation)
 
     val trainTimeout: Timeout = 30.seconds
 
-    private[instance] case class TrainRequest() extends AppInstanceAutoStartMessage[TrainResponse]
+    private[instance] case class TrainRequest() extends AutoStartMessage[TrainResponse]
     private[instance] case class TrainResponse(error: Double)
 
   }

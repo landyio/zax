@@ -30,10 +30,10 @@ class BootActor extends Actor with ActorTracing
 
   @inline
   private def startAppInstances(): Unit = {
-    import io.landy.app.instance.{AppInstances, AppInstancesActor}
+    import io.landy.app.instance.{Mediator, MediatorActor}
     val ref: ActorRef = context.actorOf(
-      props = Props[AppInstancesActor],
-      name = AppInstances.actorName
+      props = Props[MediatorActor],
+      name = Mediator.actorName
     )
   }
 

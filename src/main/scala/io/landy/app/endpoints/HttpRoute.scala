@@ -44,20 +44,20 @@ trait PrivateEndpoint extends PublicEndpoint {
     placeholder ~
       (path("config") & `json/get`) {
         extract(ctx => ctx) { ctx => {
-          import AppInstance.Commands.ConfigRequest
+          import Instance.Commands.ConfigRequest
 
           complete(
-            askApp[AppInstanceConfig](appId, ConfigRequest())
+            askApp[Instance.Config](appId, ConfigRequest())
               .map { v => v.toJson.asJsObject }
           )
         }}
       } ~
       (path("status") & `json/get`) {
         extract(ctx => ctx) { ctx => {
-          import AppInstance.Commands.StatusRequest
+          import Instance.Commands.StatusRequest
 
           complete(
-            askApp[AppInstanceStatus](appId, StatusRequest())
+            askApp[Instance.Status](appId, StatusRequest())
               .map { v => v.toJson.asJsObject }
           )
         }}
@@ -69,12 +69,12 @@ trait PrivateEndpoint extends PublicEndpoint {
         //
 
         entity(as[JsObject]) { json => {
-          val config = json.convertTo[AppInstanceConfig]
+          val config = json.convertTo[Instance.Config]
 
-          import AppInstance.Commands.ReloadConfig
+          import Instance.Commands.ReloadConfig
 
           complete(
-            store(AppInstanceConfig.Record(appId = appId, config = config))
+            store(Instance.Config.Record(appId = appId, config = config))
               .map { res =>
                 JsObject(
                   "id"      -> JsString(appId),
@@ -84,7 +84,7 @@ trait PrivateEndpoint extends PublicEndpoint {
               .andThen {
                 case Success(x) =>
                   log.info("Successfully created app-instance {#{}}!", appId)
-                  askApp[AppInstanceConfig](appId, ReloadConfig())
+                  askApp[Instance.Config](appId, ReloadConfig())
               }
           )
         }} ~ die(`json body required`)
@@ -96,11 +96,11 @@ trait PrivateEndpoint extends PublicEndpoint {
       } ~
       (path("start") & `json/post`) {
         extract(ctx => ctx) { ctx => {
-          import AppInstance.Commands.StartRequest
+          import Instance.Commands.StartRequest
 
           // TODO(kudinkin): abstract
           complete(
-            askApp[AppInstanceStatus](appId, StartRequest())
+            askApp[Instance.Status](appId, StartRequest())
               .map { v =>
                 JsObject(
                   "id"      -> JsString(appId),
@@ -112,11 +112,11 @@ trait PrivateEndpoint extends PublicEndpoint {
       } ~
       (path("stop") & `json/post`) {
         extract(ctx => ctx) { ctx => {
-          import AppInstance.Commands.StopRequest
+          import Instance.Commands.StopRequest
 
           // TODO(kudinkin): abstract
           complete(
-            askApp[AppInstanceStatus](appId, StopRequest())
+            askApp[Instance.Status](appId, StopRequest())
               .map { v =>
                 JsObject(
                   "id"      -> JsString(appId),
@@ -148,7 +148,7 @@ trait PublicEndpoint extends Endpoint {
 
   @inline
   private[endpoints] def predict(appId: String, identity: UserIdentity): Future[Variation] = {
-    import AppInstance.Commands.{PredictRequest, PredictResponse, predictTimeout}
+    import Instance.Commands.{PredictRequest, PredictResponse, predictTimeout}
 
     askApp[PredictResponse](appId, PredictRequest(identity))(timeout = predictTimeout)
       .map { r => r.variation }
@@ -227,7 +227,7 @@ trait PublicEndpoint extends Endpoint {
 
 trait Endpoint extends Service {
 
-  private val appsRef    = App.actor(AppInstances.actorName)
+  private val appsRef    = App.actor(Mediator.actorName)
   private val storageRef = App.actor(Storage.actorName)
 
   import Storage.Commands.{StoreResponse, Store}
@@ -246,12 +246,12 @@ trait Endpoint extends Service {
     ask[T](appsRef, message)
 
   @inline
-  private[endpoints] def askApp[T](appId: String, message: AppInstanceMessage[T])(implicit timeout: Timeout): Future[T] =
-    askApps[T](AppInstances.Commands.Forward(appId, message))
+  private[endpoints] def askApp[T](appId: String, message: Instance.Message[T])(implicit timeout: Timeout): Future[T] =
+    askApps[T](Mediator.Commands.Forward(appId, message))
 
   private[endpoints] val appRoute: Route = pathPrefix("app" / Segment) {
     segment: String => {
-      val appId = AppInstance.fixId(segment)
+      val appId = Instance.fixId(segment)
       appRoute(appId)
     }
   }
