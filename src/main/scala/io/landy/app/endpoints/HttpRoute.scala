@@ -74,7 +74,7 @@ trait PrivateEndpoint extends PublicEndpoint {
           import Instance.Commands.ReloadConfig
 
           complete(
-            store(Instance.Config.Record(appId = appId, config = config))
+            store(Instance.Record(appId = appId, config = config))
               .map { res =>
                 JsObject(
                   "id"      -> JsString(appId),

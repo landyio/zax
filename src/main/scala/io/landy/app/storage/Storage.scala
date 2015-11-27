@@ -451,7 +451,7 @@ object Storage extends DefaultBSONHandlers {
         }
     }
 
-    implicit val appInstanceStatePersister =
+    implicit val instanceStatePersister =
       new BSONDocumentReader[Instance.State] with BSONDocumentWriter[Instance.State] {
 
         override def write(s: State): BSONDocument =
@@ -489,7 +489,7 @@ object Storage extends DefaultBSONHandlers {
     // TODO(kudinkin): Merge
     //
 
-    implicit val appInstanceConfigPersister =
+    implicit val instanceConfigPersister =
       new BSONDocumentReader[Instance.Config] with BSONDocumentWriter[Instance.Config] {
         import Instance.Config._
 
@@ -516,20 +516,20 @@ object Storage extends DefaultBSONHandlers {
         }
       }
 
-    implicit val appInstanceConfigRecordPersister =
-      new Persister[Instance.Config.Record] {
-        import Instance.Config.Record._
-        val collection: String = "appconfig"
+    implicit val instanceRecordPersister =
+      new Persister[Instance.Record] {
+        import Instance.Record._
+        val collection: String = "instances"
 
-        override def write(t: Instance.Config.Record): BSONDocument =
+        override def write(t: Instance.Record): BSONDocument =
           BSONDocument(
             `_id`       -> BSONObjectID(t.appId),
             `runState`  -> BSON.writeDocument(t.runState),
             `config`    -> BSON.writeDocument(t.config)
           )
 
-        override def read(bson: BSONDocument): Instance.Config.Record =
-          Instance.Config.Record(
+        override def read(bson: BSONDocument): Instance.Record =
+          Instance.Record(
             appId     = bson.getAs[BSONObjectID]      (`_id`)      .map { i => i.stringify } getOrElse { "" },
             runState  = bson.getAs[State]             (`runState`) .get, // .getOrElse { AppInstance.State.Suspended },
             config    = bson.getAs[Instance.Config] (`config`)   .get

@@ -101,10 +101,10 @@ class InstanceActor(val appId: String) extends ExecutingActor {
             .map {
               case TrainRegressorResponse(model, error) =>
 
-                import Storage.Persisters.{appInstanceConfigPersister, appInstanceConfigRecordPersister}
+                import Storage.Persisters.{instanceConfigPersister, instanceRecordPersister}
 
-                ask[UpdateResponse](this.storage(), Update[Instance.Config.Record](appId) {
-                  Instance.Config.Record.`config` ->
+                ask[UpdateResponse](this.storage(), Update[Instance.Record](appId) {
+                  Instance.Record.`config` ->
                     getConfig.copy(model = Some(Right(model.asInstanceOf[Instance.Config.RegressionModel])))
                 })
 
@@ -188,12 +188,12 @@ class InstanceActor(val appId: String) extends ExecutingActor {
   private def getConfig: Instance.Config =
     predictor.collect { case p => p.config } get // getOrElse Instance.Config.sentinel
 
-  private def reloadConfig(): Future[Instance.Config.Record] = {
+  private def reloadConfig(): Future[Instance.Record] = {
     import Storage.Persisters._
     import Storage.Commands.{Load, LoadResponse}
 
     val f = { for (
-      r <- ask[LoadResponse[Instance.Config.Record]](this.storage(), Load[Instance.Config.Record](appId))
+      r <- ask[LoadResponse[Instance.Record]](this.storage(), Load[Instance.Record](appId))
     ) yield r.seq.collectFirst(Identity.partial()) } map {
       case Some(c)  => c
       case None     => throw new Exception(s"Failed to retrieve app's {#${appId}} configuration!")
@@ -206,7 +206,7 @@ class InstanceActor(val appId: String) extends ExecutingActor {
     }
   }
 
-  private def applyConfig(r: Instance.Config.Record): Unit = {
+  private def applyConfig(r: Instance.Record): Unit = {
     updateState(r.runState) match {
       case State.Predicting(_) =>
         predictor = Some(Predictor(r.config))
@@ -251,11 +251,11 @@ class InstanceActor(val appId: String) extends ExecutingActor {
     *
     * @param state target state being switched to
     */
-  private def switchState(state: State): Future[Instance.Config.Record] = {
+  private def switchState(state: State): Future[Instance.Record] = {
     import Storage.Persisters._
 
-    ask[UpdateResponse](this.storage(), Update[Instance.Config.Record](appId) {
-      Instance.Config.Record.`runState` -> state
+    ask[UpdateResponse](this.storage(), Update[Instance.Record](appId) {
+      Instance.Record.`runState` -> state
     }).map      { r => r.ok }
       .andThen  {
         case Failure(t) => log.error(t, s"Failed to switch state to '${state}'!")
@@ -368,8 +368,6 @@ class InstanceActor(val appId: String) extends ExecutingActor {
 }
 
 
-
-
 object Instance {
 
   import org.apache.commons.lang3.StringUtils._
@@ -415,8 +413,6 @@ object Instance {
     model:                Option[Instance.Config.Model]
   )
 
-
-  // TODO(kudinkin): Merge `Instance.Config` & `Instance.Config.Record`
   object Config {
 
     type ClassificationModel  = SparkClassificationModel[_ <: SparkModel.Model]
@@ -428,21 +424,7 @@ object Instance {
     val `descriptors` = "descriptors"
     val `model`       = "model"
 
-    val sentinel = Instance.Config(variations = Seq(), userDataDescriptors = Seq(), model = None)
-
-    case class Record(
-      appId:    String,
-      runState: Instance.State = Instance.State.NoData,
-      config:   Instance.Config = Instance.Config.sentinel
-    )
-
-    object Record {
-      val `config`    = "config"
-      val `runState`  = "runState"
-
-      def notFound(appId: String) =
-        Record(appId, Instance.State.NoData, Instance.Config.sentinel)
-    }
+    val empty = Instance.Config(variations = Seq(), userDataDescriptors = Seq(), model = None)
   }
 
 
@@ -524,6 +506,28 @@ object Instance {
         eventsAllStart    = 0,
         eventsAllFinish   = 0
       )
+  }
+
+
+  /**
+    * Instance's serialized representation
+    *
+    * @param appId instance unique id
+    * @param runState current state of the running instance
+    * @param config configuration of the instance
+    */
+  case class Record(
+    appId:    String,
+    runState: Instance.State  = Instance.State.NoData,
+    config:   Instance.Config = Instance.Config.empty
+  )
+
+  object Record {
+    val `config`    = "config"
+    val `runState`  = "runState"
+
+    def notFound(appId: String) =
+      Record(appId, Instance.State.NoData, Instance.Config.empty)
   }
 
 
