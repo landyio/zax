@@ -3,25 +3,23 @@ package io.landy.app.instance
 import akka.actor.ActorRef
 import akka.pattern.pipe
 import akka.util.Timeout
+import io.landy.app.App
 import io.landy.app.actors.ExecutingActor
-import io.landy.app.model._
 import io.landy.app.driver.SparkDriverActor
+import io.landy.app.model._
 import io.landy.app.storage.Storage
 import io.landy.app.storage.Storage.Commands.{Update, UpdateResponse}
-import io.landy.app.util.{Reflect, Identity, boolean2Int}
-import io.landy.app.App
+import io.landy.app.util.{Identity, Reflect, boolean2Int}
 
 import scala.collection.BitSet
 import scala.compat.Platform
 import scala.concurrent.{Await, Future}
-import scala.util.{Failure, Success}
-
 import scala.language.{implicitConversions, postfixOps}
+import scala.util.{Failure, Success}
 
 class InstanceActor(val appId: String) extends ExecutingActor {
 
   import Instance._
-
   import util.State._
 
   private val sparkDriverRef = App.actor(classOf[SparkDriverActor].getName)
@@ -154,8 +152,8 @@ class InstanceActor(val appId: String) extends ExecutingActor {
     **/
   private def getStatus(from: Epoch = 0l): Future[Instance.Status] = {
 
-    import Storage.Persisters._
     import Storage.Commands.{Count, CountResponse}
+    import Storage.Persisters._
 
     val state   = this.runState
     val storage = this.storage()
@@ -189,8 +187,8 @@ class InstanceActor(val appId: String) extends ExecutingActor {
     predictor.collect { case p => p.config } get // getOrElse Instance.Config.sentinel
 
   private def reloadConfig(): Future[Instance.Record] = {
-    import Storage.Persisters._
     import Storage.Commands.{Load, LoadResponse}
+    import Storage.Persisters._
 
     val f = { for (
       r <- ask[LoadResponse[Instance.Record]](this.storage(), Load[Instance.Record](appId))
@@ -266,8 +264,8 @@ class InstanceActor(val appId: String) extends ExecutingActor {
   }
 
   private def buildTrainingSample(maxSize: Int): Future[Seq[((UserIdentity, Variation), Goal#Type)]] = {
-    import Storage.Persisters._
     import Storage.Commands.{Load, LoadResponse}
+    import Storage.Persisters._
 
     val storage = this.storage()
 
@@ -326,6 +324,10 @@ class InstanceActor(val appId: String) extends ExecutingActor {
       sender ! getConfig
     }
 
+    case r @ Storage.Commands.StoreRequest => runState except State.Suspended then {
+      storage() ? r pipeTo sender()
+    }
+
     case Commands.PredictRequest(uid) => runState except State.Suspended then {
       // TODO(kudinkin): move?
       self    ! Commands.TrainRequest()
@@ -375,9 +377,8 @@ object Instance {
 
   import scala.concurrent.duration._
 
-  def fixId(appId: String): String = appId match {
-
-    case "new" => BSONObjectID.generate.stringify
+  def genId(): String = BSONObjectID.generate.stringify
+  def padId(appId: String): String = appId match {
     case _ =>     leftPad(appId, 24, '0')
   }
 
@@ -447,7 +448,7 @@ object Instance {
     val `name` = "name"
 
     def withName(name: String): State = {
-      import scala.reflect.runtime.{ universe => u }
+      import scala.reflect.runtime.{universe => u}
       Reflect.moduleFrom[State](u.typeOf[State.type].decls.filter(_.isModule)
                                                           .filter(_.name.decodedName.toString == name)
                                                           .head)

@@ -20,22 +20,16 @@ import scala.util.{Failure, Success}
 
 class PrivateEndpointActor extends HttpServiceActor with PrivateEndpoint
                                                     with ActorLogging {
-
   def receive = runRoute(route)
-  val route: Route = appRoute
-
 }
 
 class PublicEndpointActor extends HttpServiceActor  with PublicEndpoint
                                                     with ActorLogging {
-
   def receive = runRoute(route)
-  val route: Route = appRoute
-
 }
 
 
-trait PrivateEndpoint extends PublicEndpoint {
+trait PrivateEndpoint extends AppEndpoint {
 
   import Storage.Persisters._
 
@@ -63,18 +57,16 @@ trait PrivateEndpoint extends PublicEndpoint {
         }}
       } ~
       (path("create") & `json/post`) {
-
-        //
-        // TODO(kudinkin): move to `/apps/create`
-        //
-
         entity(as[JsObject]) { json => {
           val config = json.convertTo[Instance.Config]
 
           import Instance.Commands.ReloadConfig
 
+          import Storage.Commands.{Store, StoreResponse}
+          import Storage.Persisters.instanceRecordPersister
+
           complete(
-            store(Instance.Record(appId = appId, config = config))
+            ask[StoreResponse](storageRef, Store(Instance.Record(appId = appId, config = config)))
               .map { res =>
                 JsObject(
                   "id"      -> JsString(appId),
@@ -130,7 +122,7 @@ trait PrivateEndpoint extends PublicEndpoint {
   }
 
   override private[endpoints] def appRoute(appId: String): Route = {
-    super.appRoute(appId) ~
+//    super.appRoute(appId) ~
       //authenticate(authenticator) {
       //  principal: Principal => {
       //    control(appId, principal)
@@ -142,7 +134,7 @@ trait PrivateEndpoint extends PublicEndpoint {
 }
 
 
-trait PublicEndpoint extends Endpoint {
+trait PublicEndpoint extends AppEndpoint {
 
   import Storage.Persisters._
 
@@ -174,7 +166,7 @@ trait PublicEndpoint extends Endpoint {
             "serverTs"  -> System.currentTimeMillis().toString
           }
 
-          store(ev.copy(appId = appId, identity = ev.identity ++ additional))
+          storeFor(appId, ev.copy(appId = appId, identity = ev.identity ++ additional))
 
           complete(
             Future {
@@ -199,7 +191,7 @@ trait PublicEndpoint extends Endpoint {
           complete(
             prediction
               .andThen {
-                case Success((v, _)) => store(StartEvent(appId, ev.session, ev.timestamp, ev.identity, variation = v))
+                case Success((v, _)) => storeFor(appId, StartEvent(appId, ev.session, ev.timestamp, ev.identity, variation = v))
               }
               .map { case (v, state) =>
                 JsObject(
@@ -214,7 +206,7 @@ trait PublicEndpoint extends Endpoint {
         entity(as[JsObject]) { json => {
           val ev: FinishEvent = json.convertTo[FinishEvent]
 
-          store(ev.copy(appId = appId))
+          storeFor(appId, ev.copy(appId = appId))
 
           complete("")
         }} ~ die(`json body required`)
@@ -226,23 +218,17 @@ trait PublicEndpoint extends Endpoint {
         event(appId)
   }
 
+  override private[endpoints] def route: Route =
+    super[AppEndpoint].route /* ~ super[AppEndpoint].route */
 }
 
+
+/**
+  * Abstract (micro-)service handling particular HTTP endpoint
+  */
 trait Endpoint extends Service {
 
-  private val appsRef    = App.actor(Mediator.actorName)
-  private val storageRef = App.actor(Storage.actorName)
-
-  import Storage.Commands.{StoreResponse, Store}
-
-  @inline
-  private[endpoints] def store[E](element: E)(implicit persister: Storage.PersisterW[E], timeout: Timeout): Future[StoreResponse] = {
-    ask[StoreResponse](storageRef, Store(element)(persister = persister))
-      .andThen {
-        case Success(r) =>
-          log.debug("Stored '{}' ({}) instance / {{}}", element.getClass.getName, element.hashCode(), element)
-      }
-  }
+  private val appsRef = App.actor(Mediator.actorName)
 
   @inline
   private[endpoints] def askApps[T](message: Any)(implicit timeout: Timeout): Future[T] =
@@ -252,12 +238,30 @@ trait Endpoint extends Service {
   private[endpoints] def askApp[T](appId: String, message: Instance.Message[T])(implicit timeout: Timeout): Future[T] =
     askApps[T](Mediator.Commands.Forward(appId, message))
 
-  private[endpoints] val appRoute: Route = pathPrefix("app" / Segment) {
-    segment: String => {
-      val appId = Instance.fixId(segment)
-      appRoute(appId)
-    }
+  private[endpoints] def route: Route
+}
+
+
+/**
+  * `/app/\*` endpoints
+  */
+trait AppEndpoint extends Endpoint {
+
+  private[endpoints] val storageRef = App.actor(Mediator.actorName)
+
+  import Storage.Commands.{StoreResponse, Store}
+
+  @inline
+  private[endpoints] def storeFor[E](appId: String, element: E)(implicit persister: Storage.PersisterW[E], timeout: Timeout): Future[StoreResponse] = {
+    askApp[StoreResponse](appId, Store(element)(persister = persister))
   }
+
+  override private[endpoints] def route: Route =
+    pathPrefix("app" / Segment) {
+      segment: String => {
+        appRoute(Instance.padId(segment))
+      }
+    }
 
   private[endpoints] def appRoute(appId: String): Route
 }

@@ -10,7 +10,7 @@ import reactivemongo.bson.DefaultBSONHandlers
 
 import scala.concurrent.Future
 import scala.language.implicitConversions
-import scala.util.Failure
+import scala.util.{Success, Failure}
 
 class StorageActor extends ExecutingActor {
 
@@ -29,7 +29,10 @@ class StorageActor extends ExecutingActor {
 
   private def trace(f: Future[_], message: => String) =
     f.andThen {
-      case Failure(t) => log.error(t, message)
+      case Success(r) =>
+        log.debug("Stored '{}' ({}) instance / {{}}", r.getClass.getName, r.hashCode(), r)
+      case Failure(t) =>
+        log.error(t, message)
     }
 
   /**
@@ -122,7 +125,7 @@ object Storage extends DefaultBSONHandlers {
     */
   object Commands {
 
-    case class StoreRequest[T](persister: PersisterW[T], obj: T)
+    case class StoreRequest[T](persister: PersisterW[T], obj: T) extends Instance.Message[StoreResponse]
     case class StoreResponse(ok: Boolean)
 
     object Store {
