@@ -71,8 +71,13 @@ class InstanceActor(val appId: String) extends ExecutingActor {
           s.eventsAllStart  >= MINIMAL_SAMPLE_SIZE
         }
 
-      case State.NoData => Future { true }
-      case _            => Future { false }
+      case State.NoData =>
+        getStatus().map { s =>
+          s.eventsAllFinish >= MINIMAL_POSITIVE_OUTCOMES_NO &&
+          s.eventsAllStart  >= MINIMAL_SAMPLE_SIZE
+        }
+
+      case _ => Future { false }
     }
   }
 
