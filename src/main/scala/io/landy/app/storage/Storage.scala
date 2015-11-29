@@ -1,11 +1,11 @@
 package io.landy.app.storage
 
 import akka.pattern.pipe
+import com.typesafe.config.{Config, ConfigFactory}
 import io.landy.app.actors.ExecutingActor
 import io.landy.app.instance.Instance.State
 import io.landy.app.instance._
 import io.landy.app.model._
-import com.typesafe.config.{Config, ConfigFactory}
 import reactivemongo.bson.DefaultBSONHandlers
 
 import scala.concurrent.Future
@@ -22,13 +22,10 @@ class StorageActor extends ExecutingActor {
   private val config: Config = ConfigFactory.load()
 
   private val nodes: Seq[String]  = config.getString("landy.mongo.hosts").split(",").toSeq.map { s => s.trim }
-  private val db: String          = config.getString("landy.mongo.database")
 
   private val driver: MongoDriver = new MongoDriver()
 
   private val connection: MongoConnection = driver.connection(nodes = nodes)
-
-  private val database: DefaultDB = connection.db(name = db)
 
   private def trace(f: Future[_], message: => String) =
     f.andThen {
@@ -38,14 +35,13 @@ class StorageActor extends ExecutingActor {
   /**
     * Looks up particular collection inside database
     *
-    * @param c collection to bee sought for
+    * @param collection collection to bee sought for
     * @return found collection
     */
-  private def find(c: String): BSONCollection =
-    database.collection[BSONCollection](c)
+  private def find(db: String)(collection: String): BSONCollection =
+    connection.db(name = db).collection[BSONCollection](collection)
 
   import Commands._
-  import Persisters._
 
   def receive = trace {
 
@@ -54,7 +50,7 @@ class StorageActor extends ExecutingActor {
 
       // TODO(kudinkin): `collect` silently swallows the errors in the `Storage`
 
-      val c = find(persister.collection)
+      val c = find(persister.database)(persister.collection)
       val r = c .find(selector)
                 .cursor[persister.Target](ReadPreference.Nearest(filterTag = None))
                 .collect[List](upTo, stopOnError = false)
@@ -71,7 +67,7 @@ class StorageActor extends ExecutingActor {
 
 
     case CountRequest(persister, selector) =>
-      val c = find(persister.collection)
+      val c = find(persister.database)(persister.collection)
       val r = c.count(selector = Some(selector))
 
       trace(
@@ -80,7 +76,7 @@ class StorageActor extends ExecutingActor {
       ) pipeTo sender()
 
     case StoreRequest(persister, obj) =>
-      val c = find(persister.collection)
+      val c = find(persister.database)(persister.collection)
       val r = c.insert(obj)(writer = persister, ec = executionContext)
 
       trace(
@@ -91,7 +87,7 @@ class StorageActor extends ExecutingActor {
     case UpdateRequest(persister, selector, modifier) =>
       val w = Storage.BSONDocumentIdentity
 
-      val c = find(persister.collection)
+      val c = find(persister.database)(persister.collection)
       val r = c.update(selector, BSONDocument("$set" -> modifier))(selectorWriter = w, updateWriter = w, ec = executionContext)
 
       trace(
@@ -125,8 +121,6 @@ object Storage extends DefaultBSONHandlers {
     * Commands accepted by the storaging actor
     */
   object Commands {
-
-    import Persisters._
 
     case class StoreRequest[T](persister: PersisterW[T], obj: T)
     case class StoreResponse(ok: Boolean)
@@ -189,6 +183,7 @@ object Storage extends DefaultBSONHandlers {
     type Target = T
 
     val collection: String
+    val database: String
   }
 
   trait PersisterR[T] extends PersisterBase[T] with BSONDocumentReader[T] {
@@ -200,6 +195,7 @@ object Storage extends DefaultBSONHandlers {
   }
 
   trait Persister[T] extends PersisterR[T] with PersisterW[T] {
+    protected val c: Config = ConfigFactory.load()
     override def toString: String = s"persister-rw($collection)"
   }
 
@@ -280,7 +276,9 @@ object Storage extends DefaultBSONHandlers {
     implicit val startEventPersister =
       new Persister[StartEvent] {
         import Event._
-        val collection: String = s"events_${`type:Start`}"
+
+        override val database: String   = c.getString("landy.mongo.database.events")
+        override val collection: String = `type:Start`
 
         override def write(t: StartEvent): BSONDocument =
           BSONDocument(
@@ -305,7 +303,9 @@ object Storage extends DefaultBSONHandlers {
     implicit val finishEventPersister =
       new Persister[FinishEvent] {
         import Event._
-        override val collection: String = s"events_${`type:Finish`}"
+
+        override val database: String   = c.getString("landy.mongo.database.events")
+        override val collection: String = `type:Finish`
 
         override def write(t: FinishEvent) =
           BSONDocument(
@@ -400,9 +400,6 @@ object Storage extends DefaultBSONHandlers {
         }
       }
 
-
-      import Picklers.{featureTypePickler, algoPickler}
-
       implicit val binaryPersister =
         new BSONReader[BSONBinary, Instance.Config.Model] with BSONWriter[Instance.Config.Model, BSONBinary] {
 
@@ -492,7 +489,6 @@ object Storage extends DefaultBSONHandlers {
     implicit val instanceConfigPersister =
       new BSONDocumentReader[Instance.Config] with BSONDocumentWriter[Instance.Config] {
         import Instance.Config._
-
         import Model.binaryPersister
 
         override def write(c: Instance.Config): BSONDocument = {
@@ -519,7 +515,9 @@ object Storage extends DefaultBSONHandlers {
     implicit val instanceRecordPersister =
       new Persister[Instance.Record] {
         import Instance.Record._
-        val collection: String = "instances"
+
+        override val database: String         = c.getString("landy.mongo.database.master")
+        override val collection: String = "instances"
 
         override def write(t: Instance.Record): BSONDocument =
           BSONDocument(
@@ -530,8 +528,8 @@ object Storage extends DefaultBSONHandlers {
 
         override def read(bson: BSONDocument): Instance.Record =
           Instance.Record(
-            appId     = bson.getAs[BSONObjectID]      (`_id`)      .map { i => i.stringify } getOrElse { "" },
-            runState  = bson.getAs[State]             (`runState`) .get, // .getOrElse { AppInstance.State.Suspended },
+            appId     = bson.getAs[BSONObjectID]    (`_id`)      .map { i => i.stringify } getOrElse { "" },
+            runState  = bson.getAs[State]           (`runState`) .get, // .getOrElse { AppInstance.State.Suspended },
             config    = bson.getAs[Instance.Config] (`config`)   .get
           )
       }
