@@ -52,6 +52,8 @@ resolvers += "Local" at "file://" + Path.userHome.absolutePath + "/.ivy2/local"
 resolvers += "sonatype-releases"  at "https://oss.sonatype.org/content/repositories/releases/"
 resolvers += "sonatype-snapshots" at "https://oss.sonatype.org/content/repositories/snapshots/"
 
+unmanagedJars in Compile <<= baseDirectory map { base => (base ** "*.jar").classpath }
+
 libraryDependencies ++= Seq(
   "org.scalaz"          %%  "scalaz-core"    % "7.1.3" withSources(),
   "org.specs2"          %%  "specs2-core"    % "2.4.16" % "test"
@@ -94,7 +96,7 @@ libraryDependencies ++= {
 
 libraryDependencies ++= {
   Seq(
-    "org.scala-lang.modules" %% "scala-pickling" % "0.10.3-SNAPSHOT" withSources(),
+//    "org.scala-lang.modules" %% "scala-pickling" % "0.10.3-SNAPSHOT" withSources(),
     "org.scala-sbt" %% "serialization" % "0.1.2"
   )
 }
