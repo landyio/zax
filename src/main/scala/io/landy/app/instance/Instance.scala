@@ -324,7 +324,7 @@ class InstanceActor(val appId: String) extends ExecutingActor {
       sender ! getConfig
     }
 
-    case r @ Storage.Commands.StoreRequest => runState except State.Suspended then {
+    case r @ Storage.Commands.StoreRequest(_, _) => runState except State.Suspended then {
       storage() ? r pipeTo sender()
     }
 
