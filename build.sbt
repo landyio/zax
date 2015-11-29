@@ -88,7 +88,7 @@ libraryDependencies ++= {
 libraryDependencies ++= {
   Seq(
     "com.typesafe.play"  %% "play-iteratees" % "2.4.2",
-    "org.reactivemongo"  %% "reactivemongo"  % "0.11.3"
+    "org.reactivemongo"  %% "reactivemongo"  % "0.11.7"
   )
 }
 
