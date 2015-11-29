@@ -329,7 +329,7 @@ class InstanceActor(val appId: String) extends ExecutingActor {
     case Commands.PredictRequest(uid) => runState except State.Suspended then {
       // TODO(kudinkin): move?
       self    ! Commands.TrainRequest()
-      sender  ! Commands.PredictResponse(predict(uid))
+      sender  ! Commands.PredictResponse(predict(uid), runState)
     }
 
     case Commands.TrainRequest() => runState except State.Suspended or
@@ -554,7 +554,7 @@ object Instance {
     val predictTimeout: Timeout = 500.milliseconds
 
     case class PredictRequest(identity: UserIdentity) extends AutoStartMessage[PredictResponse]
-    case class PredictResponse(variation: Variation)
+    case class PredictResponse(variation: Variation, state: Instance.State)
 
     val trainTimeout: Timeout = 30.seconds
 
