@@ -280,7 +280,7 @@ object Storage extends DefaultBSONHandlers {
     implicit val startEventPersister =
       new Persister[StartEvent] {
         import Event._
-        val collection: String = s"events:${`type:Start`}"
+        val collection: String = s"events_${`type:Start`}"
 
         override def write(t: StartEvent): BSONDocument =
           BSONDocument(
@@ -305,7 +305,7 @@ object Storage extends DefaultBSONHandlers {
     implicit val finishEventPersister =
       new Persister[FinishEvent] {
         import Event._
-        override val collection: String = s"events:${`type:Finish`}"
+        override val collection: String = s"events_${`type:Finish`}"
 
         override def write(t: FinishEvent) =
           BSONDocument(
