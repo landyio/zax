@@ -247,7 +247,7 @@ trait Endpoint extends Service {
   */
 trait AppEndpoint extends Endpoint {
 
-  private[endpoints] val storageRef = App.actor(Mediator.actorName)
+  private[endpoints] val storageRef = App.actor(Storage.actorName)
 
   import Storage.Commands.{StoreResponse, Store}
 
