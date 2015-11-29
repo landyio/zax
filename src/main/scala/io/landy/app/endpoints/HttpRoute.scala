@@ -219,7 +219,7 @@ trait PublicEndpoint extends AppEndpoint {
   }
 
   override private[endpoints] def route: Route =
-    super[AppEndpoint].route /* ~ super[AppEndpoint].route */
+    super[AppEndpoint].route /* ~ super[AppsEndpoint].route */
 }
 
 
