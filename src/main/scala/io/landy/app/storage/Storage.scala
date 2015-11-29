@@ -125,7 +125,7 @@ object Storage extends DefaultBSONHandlers {
     */
   object Commands {
 
-    case class StoreRequest[T](persister: PersisterW[T], obj: T) extends Instance.Message[StoreResponse]
+    case class StoreRequest[T](persister: PersisterW[T], obj: T) extends Instance.AutoStartMessage[StoreResponse]
     case class StoreResponse(ok: Boolean)
 
     object Store {
