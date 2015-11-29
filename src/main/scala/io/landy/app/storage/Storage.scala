@@ -305,7 +305,7 @@ object Storage extends DefaultBSONHandlers {
     implicit val finishEventPersister =
       new Persister[FinishEvent] {
         import Event._
-        override val collection: String = s"events${`type:Finish`}"
+        override val collection: String = s"events:${`type:Finish`}"
 
         override def write(t: FinishEvent) =
           BSONDocument(
