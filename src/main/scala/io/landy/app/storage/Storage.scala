@@ -404,7 +404,10 @@ object Storage extends DefaultBSONHandlers {
         }
       }
 
+      import scala.pickling.Defaults._
       import scala.pickling.Pickler
+
+      import Picklers.{algoPickler, featureTypePickler}
 
       implicit val cmp = Pickler.generate[SparkDecisionTreeClassificationModel]
       implicit val rmp = Pickler.generate[SparkDecisionTreeRegressionModel]
