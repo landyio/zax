@@ -15,18 +15,18 @@ ENV SCALA_VERSION 2.11.7
 ENV SBT_VERSION 0.13.9
 ENV SBT_OPTS "-XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=512m -Xmx6096M"
 
-ENV WORKDIR /
+ENV APPDIR /
 
-RUN mkdir -p $WORKDIR/zax
+RUN mkdir -p $APPDIR/zax/
 
 # Install Scala
 RUN \
-  cd $WORKDIR && \
+  cd $APPDIR && \
   curl -o scala-$SCALA_VERSION.tgz http://downloads.typesafe.com/scala/$SCALA_VERSION/scala-$SCALA_VERSION.tgz && \
   tar -xf scala-$SCALA_VERSION.tgz && \
   rm scala-$SCALA_VERSION.tgz && \
-  touch $WORKDIR/.bashrc && \
-  echo 'export PATH=$PATH:$WORKDIR/scala-$SCALA_VERSION/bin:$PATH' >> $WORKDIR/.bashrc
+  touch $APPDIR/.bashrc && \
+  echo 'export PATH=$PATH:$APPDIR/scala-$SCALA_VERSION/bin:$PATH' >> $APPDIR/.bashrc
 
 # Install sbt
 RUN \
@@ -37,9 +37,9 @@ RUN \
   apt-get install sbt
 
 # Define working directory
-WORKDIR $WORKDIR/zax
+WORKDIR $APPDIR/zax/
 
-COPY build.sbt  .
+COPY build.sbt  ./
 COPY lib        ./lib/
 COPY src        ./src/
 
