@@ -80,7 +80,7 @@ libraryDependencies ++= {
 }
 
 libraryDependencies ++= {
-  val sparkVersion = "1.5.1"
+  val sparkVersion = "1.5.2"
   Seq(
     "org.apache.spark" %% "spark-core" % sparkVersion withSources(),
     "org.apache.spark" %% "spark-mllib" % sparkVersion withSources()
