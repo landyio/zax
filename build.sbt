@@ -1,18 +1,6 @@
 import sbt.Keys._
 import sbt._
 
-//// config scala(c) ////
-//autoScalaLibrary := false
-//scalaVersion := "2.11.7"
-//scalacOptions ++= Seq("-target:jvm-1.8")
-//scalacOptions ++= Seq("-encoding", "utf8")
-//scalacOptions ++= Seq("-unchecked", "-deprecation", "-feature")
-//scalacOptions ++= Seq("-optimise")
-// scalacOptions ++= Seq("-Yinline-warnings")
-// scalacOptions ++= Seq("-Xexperimental")
-//ivyScala := ivyScala.value map { _.copy(overrideScalaVersion = true) }
-/////////////////////////
-
 lazy val common = Seq(
   organization  := "io.landy",
   version       := "0.0.1",
@@ -23,8 +11,7 @@ lazy val common = Seq(
   scalacOptions     := Seq("-target:jvm-1.7")
                     ++ Seq("-encoding", "utf8")
                     ++ Seq("-unchecked", "-deprecation", "-feature")
-                    ++ Seq("-optimise")
-                    ++ Seq("–Xmax-classfile-name 242"),
+                    ++ Seq("-optimise"),
 //                    ++ Seq("-Xlog-implicits"),
 //                    ++ Seq("-Yinline-warnings")
 //                    ++ Seq("-Xexperimental")
@@ -40,16 +27,27 @@ lazy val root = (project in file("."))
     name := "zax"
   )
 
-//// One-Jar //////////////////////////////////////////////////////////////////////////////////////
-// NB:
-//  Disabled, polluting project with its own plugins
-//
-//import com.github.retronym.SbtOneJar._
+/// Docker  ///////////////////////////////////////////////////////////////////////////////////////
 
-//oneJarSettings
-///////////////////////////////////////////////////////////////////////////////////////////////////
+enablePlugins(JavaServerAppPackaging)
+enablePlugins(DockerPlugin)
 
-//resolvers += "Local" at "file://" + Path.userHome.absolutePath + "/.ivy2/local"
+mainClass in Compile := Some("io.landy.app.App")
+
+import com.typesafe.sbt.packager.docker._
+
+packageName in Docker := name.value
+version     in Docker := version.value
+
+defaultLinuxInstallLocation in Docker := "/opt/docker/"
+
+dockerBaseImage := "java:8"
+
+dockerExposedPorts := Seq(8080, 8081)
+
+
+/// Resolvers /////////////////////////////////////////////////////////////////////////////////////
+
 resolvers += "sonatype-releases"  at "https://oss.sonatype.org/content/repositories/releases/"
 resolvers += "sonatype-snapshots" at "https://oss.sonatype.org/content/repositories/snapshots/"
 
@@ -97,7 +95,10 @@ libraryDependencies ++= {
 
 libraryDependencies ++= {
   Seq(
-//    "org.scala-lang.modules" %% "scala-pickling" % "0.10.3-SNAPSHOT" withSources(),
+    //
+    // TODO(kudinkin): replaced as unmanaged-dep until 0.11.* version lands
+    //
+    // "org.scala-lang.modules" %% "scala-pickling" % "0.10.3-SNAPSHOT" withSources(),
   )
 }
 
@@ -108,23 +109,6 @@ libraryDependencies ++= {
     //"com.storm-enroute" %% "scalameter" % "0.7-SNAPSHOT" % "test"
   )
 }
-
-/// Docker  ////////////////////////////////////////////////////////////////////////////////
-
-//enablePlugins(DockerPlugin)
-//
-//import com.typesafe.sbt.packager.docker._
-//
-//dockerCommands += ExecCmd("RUN", "mkdir", "-", "/opt/docker")
-//
-//packageName in Docker := "zax"
-//version in Docker := "0.0.1"
-//
-//defaultLinuxInstallLocation in Docker := "/opt/docker/"
-//
-//dockerBaseImage := "java:latest"
-//
-//dockerExposedPorts := Seq(8080, 8081)
 
 /// Local Bindings ////////////////////////////////////////////////////////////////////////////////
 
