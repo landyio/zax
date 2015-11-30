@@ -10,7 +10,8 @@ import reactivemongo.bson.DefaultBSONHandlers
 
 import scala.concurrent.Future
 import scala.language.implicitConversions
-import scala.util.{Success, Failure}
+import scala.pickling.Unpickler
+import scala.util.{Failure, Success}
 
 class StorageActor extends ExecutingActor {
 
@@ -402,6 +403,13 @@ object Storage extends DefaultBSONHandlers {
           }
         }
       }
+
+      import scala.pickling.Pickler
+
+      implicit val cmp = Pickler.generate[SparkDecisionTreeClassificationModel]
+      implicit val rmp = Pickler.generate[SparkDecisionTreeRegressionModel]
+
+      implicit val pu = Unpickler.generate[PickleableModel]
 
       implicit val binaryPersister =
         new BSONReader[BSONBinary, Instance.Config.Model] with BSONWriter[Instance.Config.Model, BSONBinary] {
