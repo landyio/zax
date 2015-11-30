@@ -21,7 +21,7 @@ landy:
     _id:			_String_	\# Variation ID.
     name: 			_String_	\# Name
     active: 		_Boolean_   \# State of variation in the editor
-	elements:   	_Object_ 	\# List of elements
+	elements:   	_Array_ 	\# List of elements
 		selector: 	_String_	\# CSS Selector
 		name: 		_String_	\# Name of element
 		html:		_String_	\# Html diff if changed
