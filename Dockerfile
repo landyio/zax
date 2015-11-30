@@ -13,6 +13,7 @@ MAINTAINER Alexey Kudinkin
 
 ENV SCALA_VERSION 2.11.7
 ENV SBT_VERSION 0.13.9
+ENV SBT_OPTS "-XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=512m -Xmx6096M"
 
 ENV WORKDIR /opt/docker
 
