@@ -15,7 +15,7 @@ ENV SCALA_VERSION 2.11.7
 ENV SBT_VERSION 0.13.9
 ENV SBT_OPTS "-XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=512m -Xmx6096M"
 
-ENV WORKDIR /opt/docker
+ENV WORKDIR /
 
 RUN mkdir -p $WORKDIR/zax
 
@@ -37,7 +37,7 @@ RUN \
   apt-get install sbt
 
 # Define working directory
-WORKDIR /opt/docker/zax
+WORKDIR $WORKDIR/zax
 
 COPY build.sbt  .
 COPY lib        ./lib/
