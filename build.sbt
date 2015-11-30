@@ -109,6 +109,22 @@ libraryDependencies ++= {
   )
 }
 
+/// Docker  ////////////////////////////////////////////////////////////////////////////////
+
+//enablePlugins(DockerPlugin)
+//
+//import com.typesafe.sbt.packager.docker._
+//
+//dockerCommands += ExecCmd("RUN", "mkdir", "-", "/opt/docker")
+//
+//packageName in Docker := "zax"
+//version in Docker := "0.0.1"
+//
+//defaultLinuxInstallLocation in Docker := "/opt/docker/"
+//
+//dockerBaseImage := "java:latest"
+//
+//dockerExposedPorts := Seq(8080, 8081)
 
 /// Local Bindings ////////////////////////////////////////////////////////////////////////////////
 
