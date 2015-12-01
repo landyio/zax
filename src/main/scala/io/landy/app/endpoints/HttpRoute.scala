@@ -139,11 +139,11 @@ trait PublicEndpoint extends AppEndpoint {
   import Storage.Persisters._
 
   @inline
-  private[endpoints] def predict(appId: String, identity: UserIdentity): Future[(Variation, Instance.State)] = {
+  private[endpoints] def predict(appId: String, identity: UserIdentity): Future[((Variation, Variation.Id), Instance.State)] = {
     import Instance.Commands.{PredictRequest, PredictResponse, predictTimeout}
 
     askApp[PredictResponse](appId, PredictRequest(identity))(timeout = predictTimeout)
-      .map { r => (r.variation, r.state) }
+      .map { r => ((r.variation, r.id), r.state) }
   }
 
   @inline
@@ -191,9 +191,9 @@ trait PublicEndpoint extends AppEndpoint {
           complete(
             prediction
               .andThen {
-                case Success((v, _)) => storeFor(appId, StartEvent(appId, ev.session, ev.timestamp, ev.identity, variation = v))
+                case Success(((_, id), _)) => storeFor(appId, StartEvent(appId, ev.session, ev.timestamp, ev.identity, variation = id))
               }
-              .map { case (v, state) =>
+              .map { case ((v, id), state) =>
                 JsObject(
                   "variation" -> v.toJson,
                   "predicted" -> state.isInstanceOf[Instance.State.Predicting].toJson

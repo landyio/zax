@@ -254,7 +254,7 @@ object Storage extends DefaultBSONHandlers {
       new BSONReader[BSONString, Variation] with BSONWriter[Variation, BSONString] {
 
         override def write(v: Variation): BSONString =
-          BSON.write(v.id)
+          BSON.write(v.value)
 
         override def read(bson: BSONString): Variation =
           Variation(bson.value)
@@ -300,7 +300,7 @@ object Storage extends DefaultBSONHandlers {
             session   = bson.getAs[String]        (`session`)   .get,
             timestamp = bson.getAs[Long]          (`timestamp`) .get,
             identity  = bson.getAs[UserIdentity]  (`identity`)  .get,
-            variation = bson.getAs[Variation]     (`variation`) .get
+            variation = bson.getAs[Variation.Id]  (`variation`) .get
           )
       }
 

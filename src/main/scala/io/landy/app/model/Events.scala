@@ -33,7 +33,7 @@ case class PredictEvent(
 
 trait StartEventI extends Event {
   val identity: UserIdentity
-  val variation: Variation
+  val variation: Variation.Id
 }
 
 case class StartEvent(
@@ -41,7 +41,7 @@ case class StartEvent(
   override val session: String,
   override val timestamp: Long,
   override val identity: UserIdentity,
-  override val variation: Variation
+  override val variation: Variation.Id
 ) extends StartEventI
 
 

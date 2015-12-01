@@ -38,12 +38,10 @@ class InstanceActor(val appId: String) extends ExecutingActor {
     *
     * @return prediction result (given user-{{{identity}}})
     **/
-  private def predict(identity: UserIdentity): Variation = {
+  private def predict(identity: UserIdentity): (Variation.Id, Variation) = {
     val v = predictor
               .map { p => p.predictFor(identity) }
-              .getOrElse {
-                Variation.sentinel
-              }
+              .get
 
     log.debug("Predicted {{}} for {{}} [{{}}]", v, identity, predictor)
     v
@@ -131,14 +129,14 @@ class InstanceActor(val appId: String) extends ExecutingActor {
     * Explains given sample from the language of the app's model down to the language
     * of the trainer: 'squeezing' features down to corresponding numerical values
     */
-  private def explain(sample: Seq[((UserIdentity, Variation), Goal#Type)]): (Seq[(Seq[Double], Double)], BitSet) =
+  private def explain(sample: Seq[((UserIdentity, Variation.Id), Goal#Type)]): (Seq[(Seq[Double], Double)], BitSet) =
     predictor match {
       case Some(p) =>
 
         // Convert sample into user-data-descriptors into numerical 'features'
         val s = sample.map {
-          case ((uid, v), goal) =>
-            (uid.toFeatures(p.config.userDataDescriptors) ++ Seq(v.id.toDouble), goal.toDouble)
+          case ((uid, vid), goal) =>
+            (uid.toFeatures(p.config.userDataDescriptors) ++ Seq(vid.toDouble), goal.toDouble)
         }
 
         // Designate peculiar features as categorical ones
@@ -269,13 +267,13 @@ class InstanceActor(val appId: String) extends ExecutingActor {
       }
   }
 
-  private def buildTrainingSample(maxSize: Int): Future[Seq[((UserIdentity, Variation), Goal#Type)]] = {
+  private def buildTrainingSample(maxSize: Int): Future[Seq[((UserIdentity, Variation.Id), Goal#Type)]] = {
     import Storage.Commands.{Load, LoadResponse}
     import Storage.Persisters._
 
     val storage = this.storage()
 
-    def coalesce(es: Event*): Option[((UserIdentity, Variation), Goal#Type)] = {
+    def coalesce(es: Event*): Option[((UserIdentity, Variation.Id), Goal#Type)] = {
       val s = es.filter { _.isInstanceOf[StartEvent] }
                 .collectFirst({ case x => x.asInstanceOf[StartEvent] })
 
@@ -342,7 +340,10 @@ class InstanceActor(val appId: String) extends ExecutingActor {
     case Commands.PredictRequest(uid) => runState except State.Suspended then {
       // TODO(kudinkin): move?
       self    ! Commands.TrainRequest()
-      sender  ! Commands.PredictResponse(predict(uid), runState)
+
+      val (id, v) = predict(uid)
+
+      sender ! Commands.PredictResponse(id, v, runState)
     }
 
     case Commands.TrainRequest() => runState except State.Suspended or
@@ -570,7 +571,7 @@ object Instance {
     val predictTimeout: Timeout = 500.milliseconds
 
     case class PredictRequest(identity: UserIdentity) extends AutoStartMessage[PredictResponse]
-    case class PredictResponse(variation: Variation, state: Instance.State)
+    case class PredictResponse(id: Variation.Id, variation: Variation, state: Instance.State)
 
     val trainTimeout: Timeout = 30.seconds
 

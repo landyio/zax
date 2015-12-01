@@ -32,14 +32,15 @@ object UserIdentity {
 /**
   * Variation
   *
-  * @param id unique id of the variation
+  * @param value unique id of the variation
   */
-case class Variation(id: Variation.Id)
+case class Variation(value: Variation.Type)
 
 object Variation {
-  type Id = String
+  type Type = String
+  type Id   = Int
 
-  val sentinel = new Variation("-1")
+  val sentinel = -1
 }
 
 

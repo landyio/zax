@@ -5,6 +5,8 @@ import io.landy.app.model._
 import spray.httpx.SprayJsonSupport
 import spray.json._
 
+import scala.language.postfixOps
+
 trait JsonSupport extends DefaultJsonProtocol with SprayJsonSupport {
 
   private def field[T](value: JsValue, fieldName: String, default: => T)(implicit reader: JsonReader[Option[T]]): T = {
@@ -30,9 +32,11 @@ trait JsonSupport extends DefaultJsonProtocol with SprayJsonSupport {
     */
   private[endpoints] implicit object VariationJsonFormat extends RootJsonFormat[Variation] {
 
-    override def write(o: Variation): JsValue = o.id.toJson
+    override def write(o: Variation): JsValue =
+      o.value.toJson
 
-    override def read(value: JsValue): Variation = Variation(value.convertTo[Variation.Id])
+    override def read(value: JsValue): Variation =
+      Variation(value.convertTo[Variation.Type])
   }
 
   /**
@@ -121,7 +125,7 @@ trait JsonSupport extends DefaultJsonProtocol with SprayJsonSupport {
         session   = field[String]       (value, `session`,    ""),
         timestamp = field[Long]         (value, `timestamp`,  0l),
         identity  = field[UserIdentity] (value, `identity`,   UserIdentity.empty),
-        variation = field[Variation]    (value, `variation`,  Variation.sentinel)
+        variation = field[Variation.Id] (value, `variation`,  Variation.sentinel)
       )
   }
 
