@@ -60,12 +60,7 @@ class StorageActor extends ExecutingActor {
                 .collect[List](upTo, stopOnError = false)
 
       trace(
-        r.map { os =>
-          // _DBG
-          println(s"XYXY: ${os} / ${classOf[persister.Target].getName} / ${persister.collection}")
-
-          Commands.LoadResponse(os)
-        },
+        r.map { os => Commands.LoadResponse(os) },
         s"Failed to retrieve data from ${persister.collection} for request: ${selector}"
       ) pipeTo sender()
 

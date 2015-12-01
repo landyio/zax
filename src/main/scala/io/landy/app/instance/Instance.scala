@@ -395,7 +395,7 @@ object Instance {
 
   def genId(): String = BSONObjectID.generate.stringify
   def padId(appId: String): String = appId match {
-    case _ =>     leftPad(appId, 24, '0')
+    case _ => leftPad(appId, 24, '0')
   }
 
   def actorName(appId: String): String = {
