@@ -39,8 +39,6 @@ case class Variation(value: Variation.Type)
 object Variation {
   type Type = String
   type Id   = Int
-
-  val sentinel = -1
 }
 
 

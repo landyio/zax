@@ -125,7 +125,7 @@ trait JsonSupport extends DefaultJsonProtocol with SprayJsonSupport {
         session   = field[String]       (value, `session`,    ""),
         timestamp = field[Long]         (value, `timestamp`,  0l),
         identity  = field[UserIdentity] (value, `identity`,   UserIdentity.empty),
-        variation = field[Variation.Id] (value, `variation`,  Variation.sentinel)
+        variation = field[Variation.Id] (value, `variation`,  -1)
       )
   }
 
