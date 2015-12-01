@@ -18,7 +18,7 @@ import scala.concurrent.{Await, Future}
 import scala.language.{implicitConversions, postfixOps}
 import scala.util.{Failure, Success}
 
-class InstanceActor(val appId: String) extends ExecutingActor {
+class InstanceActor(val appId: Instance.Id) extends ExecutingActor {
 
   import Instance._
   import util.State._
@@ -393,12 +393,14 @@ object Instance {
 
   import scala.concurrent.duration._
 
-  def genId(): String = BSONObjectID.generate.stringify
-  def padId(appId: String): String = appId match {
-    case _ => leftPad(appId, 24, '0')
+  type Id = String
+
+  def genId(): Id = BSONObjectID.generate.stringify
+  def padId(id: String): Id = id match {
+    case _ => leftPad(id, 24, '0')
   }
 
-  def actorName(appId: String): String = {
+  def actorName(appId: Instance.Id): String = {
     s"app-$appId"
   }
 
@@ -534,7 +536,7 @@ object Instance {
     * @param config configuration of the instance
     */
   case class Record(
-    appId:    String,
+    appId:    Instance.Id,
     runState: Instance.State  = Instance.State.NoData,
     config:   Instance.Config = Instance.Config.empty
   )
@@ -543,7 +545,7 @@ object Instance {
     val `config`    = "config"
     val `runState`  = "runState"
 
-    def notFound(appId: String) =
+    def notFound(appId: Instance.Id) =
       Record(appId, Instance.State.NoData, Instance.Config.empty)
   }
 

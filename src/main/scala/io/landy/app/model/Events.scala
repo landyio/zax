@@ -1,7 +1,9 @@
 package io.landy.app.model
 
+import io.landy.app.instance.Instance
+
 sealed trait Event {
-  val appId: String
+  val appId: Instance.Id
   val session: String
   val timestamp: Long
 }
@@ -23,7 +25,7 @@ trait PredictEventI extends Event {
 }
 
 case class PredictEvent(
-  override val appId: String = null,
+  override val appId: Instance.Id = null,
   override val session: String,
   override val timestamp: Long,
   override val identity: UserIdentity
@@ -37,7 +39,7 @@ trait StartEventI extends Event {
 }
 
 case class StartEvent(
-  override val appId: String = null,
+  override val appId: Instance.Id = null,
   override val session: String,
   override val timestamp: Long,
   override val identity: UserIdentity,
@@ -48,7 +50,7 @@ case class StartEvent(
 trait FinishEventI extends Event
 
 case class FinishEvent(
-  override val appId: String = null,
+  override val appId: Instance.Id = null,
   override val session: String,
   override val timestamp: Long
 ) extends FinishEventI

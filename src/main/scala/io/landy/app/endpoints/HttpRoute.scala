@@ -34,7 +34,7 @@ trait PrivateEndpoint extends AppEndpoint {
   import Storage.Persisters._
 
   @inline
-  private[endpoints] def control(appId: String, principal: Principal): Route = pathPrefix("control") {
+  private[endpoints] def control(appId: Instance.Id, principal: Principal): Route = pathPrefix("control") {
     placeholder ~
       (path("config") & `json/get`) {
         extract(ctx => ctx) { ctx => {
@@ -121,7 +121,7 @@ trait PrivateEndpoint extends AppEndpoint {
       }
   }
 
-  override private[endpoints] def appRoute(appId: String): Route = {
+  override private[endpoints] def appRoute(appId: Instance.Id): Route = {
 //    super.appRoute(appId) ~
       //authenticate(authenticator) {
       //  principal: Principal => {
@@ -139,7 +139,7 @@ trait PublicEndpoint extends AppEndpoint {
   import Storage.Persisters._
 
   @inline
-  private[endpoints] def predict(appId: String, identity: UserIdentity): Future[((Variation, Variation.Id), Instance.State)] = {
+  private[endpoints] def predict(appId: Instance.Id, identity: UserIdentity): Future[((Variation, Variation.Id), Instance.State)] = {
     import Instance.Commands.{PredictRequest, PredictResponse, predictTimeout}
 
     askApp[PredictResponse](appId, PredictRequest(identity))(timeout = predictTimeout)
@@ -147,14 +147,14 @@ trait PublicEndpoint extends AppEndpoint {
   }
 
   @inline
-  private[endpoints] def info(appId: String): Route = (path("info") & get) {
+  private[endpoints] def info(appId: Instance.Id): Route = (path("info") & get) {
     respondWithMediaType(`application/json`) {
       complete("")
     }
   }
 
   @inline
-  private[endpoints] def event(appId: String): Route = pathPrefix("event") {
+  private[endpoints] def event(appId: Instance.Id): Route = pathPrefix("event") {
     import io.landy.app.model._
     `options/origin` ~
       (path("start") & `json/post`) {
@@ -213,7 +213,7 @@ trait PublicEndpoint extends AppEndpoint {
       }
   }
 
-  override private[endpoints] def appRoute(appId: String): Route =  {
+  override private[endpoints] def appRoute(appId: Instance.Id): Route =  {
       info(appId) ~
         event(appId)
   }
@@ -235,7 +235,7 @@ trait Endpoint extends Service {
     ask[T](appsRef, message)
 
   @inline
-  private[endpoints] def askApp[T](appId: String, message: Instance.Message[T])(implicit timeout: Timeout): Future[T] =
+  private[endpoints] def askApp[T](appId: Instance.Id, message: Instance.Message[T])(implicit timeout: Timeout): Future[T] =
     askApps[T](Mediator.Commands.Forward(appId, message))
 
   private[endpoints] def route: Route
@@ -252,7 +252,7 @@ trait AppEndpoint extends Endpoint {
   import Storage.Commands.{StoreResponse, Store}
 
   @inline
-  private[endpoints] def storeFor[E](appId: String, element: E)(implicit persister: Storage.PersisterW[E], timeout: Timeout): Future[StoreResponse] = {
+  private[endpoints] def storeFor[E](appId: Instance.Id, element: E)(implicit persister: Storage.PersisterW[E], timeout: Timeout): Future[StoreResponse] = {
     askApp[StoreResponse](appId, Store(element)(persister = persister))
   }
 
@@ -263,7 +263,7 @@ trait AppEndpoint extends Endpoint {
       }
     }
 
-  private[endpoints] def appRoute(appId: String): Route
+  private[endpoints] def appRoute(appId: Instance.Id): Route
 }
 
 

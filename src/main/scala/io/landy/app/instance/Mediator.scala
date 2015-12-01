@@ -62,7 +62,7 @@ object Mediator {
   val actorName: String = "mediator"
 
   object Commands {
-    case class Forward[R](appId: String, message: Instance.Message[R])
+    case class Forward[R](appId: Instance.Id, message: Instance.Message[R])
   }
 
 }

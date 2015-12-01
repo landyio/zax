@@ -297,7 +297,7 @@ object Storage extends DefaultBSONHandlers {
 
         override def write(t: StartEvent): BSONDocument =
           BSONDocument(
-            `appId`     -> t.appId,
+            `appId`     -> BSONObjectID(t.appId),
             `type`      -> `type:Start`,
             `timestamp` -> t.timestamp,
             `session`   -> t.session,
@@ -307,7 +307,7 @@ object Storage extends DefaultBSONHandlers {
 
         override def read(bson: BSONDocument): StartEvent =
           StartEvent(
-            appId     = bson.getAs[String]        (`appId`)     .get,
+            appId     = bson.getAs[Instance.Id]   (`appId`)     .get,
             session   = bson.getAs[String]        (`session`)   .get,
             timestamp = bson.getAs[Long]          (`timestamp`) .get,
             identity  = bson.getAs[UserIdentity]  (`identity`)  .get,
@@ -324,7 +324,7 @@ object Storage extends DefaultBSONHandlers {
 
         override def write(t: FinishEvent) =
           BSONDocument(
-            `appId`     -> t.appId,
+            `appId`     -> BSONObjectID(t.appId),
             `type`      -> `type:Finish`,
             `timestamp` -> t.timestamp,
             `session`   -> t.session
@@ -332,9 +332,9 @@ object Storage extends DefaultBSONHandlers {
 
         override def read(bson: BSONDocument) =
           FinishEvent(
-            appId     = bson.getAs[String]  (`appId`)     .get,
-            session   = bson.getAs[String]  (`session`)   .get,
-            timestamp = bson.getAs[Long]    (`timestamp`) .get
+            appId     = bson.getAs[Instance.Id] (`appId`)     .get,
+            session   = bson.getAs[String]      (`session`)   .get,
+            timestamp = bson.getAs[Long]        (`timestamp`) .get
           )
       }
 
