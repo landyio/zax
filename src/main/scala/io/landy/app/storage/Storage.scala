@@ -6,6 +6,7 @@ import io.landy.app.actors.ExecutingActor
 import io.landy.app.instance.Instance.State
 import io.landy.app.instance._
 import io.landy.app.model._
+import io.landy.app.util.Logging
 import reactivemongo.bson.DefaultBSONHandlers
 
 import scala.concurrent.Future
@@ -28,13 +29,17 @@ class StorageActor extends ExecutingActor {
 
   private val connection: MongoConnection = driver.connection(nodes = nodes)
 
-  private def trace(f: Future[_], message: => String) =
+  import Commands._
+
+  private def trace(f: Future[_], failure: String, args: Any*) = {
+    import Logging.extendLogging
     f.andThen {
-      case Success(r) =>
-        log.debug("Stored '{}' ({}) instance / {{}}", r.getClass.getName, r.hashCode(), r)
+      case Success(r: Traceable) =>
+        r.trace match { case (t, args) => log.x.debug(t, args:_*) }
       case Failure(t) =>
-        log.error(t, message)
+        log.x.error(t, failure, args)
     }
+  }
 
   /**
     * Looks up particular collection inside database
@@ -44,8 +49,6 @@ class StorageActor extends ExecutingActor {
     */
   private def find(db: String)(collection: String): BSONCollection =
     connection.db(name = db).collection[BSONCollection](collection)
-
-  import Commands._
 
   def receive = trace {
 
@@ -74,23 +77,23 @@ class StorageActor extends ExecutingActor {
         s"Failed to retrieve data from ${persister.collection} for request: ${selector}"
       ) pipeTo sender()
 
-    case StoreRequest(persister, obj) =>
+    case req @ StoreRequest(persister, obj) =>
       val c = find(persister.database)(persister.collection)
       val r = c.insert(obj)(writer = persister, ec = executionContext)
 
       trace(
-        r.map { r => Commands.StoreResponse(r.ok) },
+        r.map { r => Commands.StoreResponse(r.ok, req) },
         s"Failed to save data in ${persister.collection} for object: ${obj}"
       ) pipeTo sender()
 
-    case UpdateRequest(persister, selector, modifier) =>
+    case req @ UpdateRequest(persister, selector, modifier) =>
       val w = Storage.BSONDocumentIdentity
 
       val c = find(persister.database)(persister.collection)
       val r = c.update(selector, BSONDocument("$set" -> modifier))(selectorWriter = w, updateWriter = w, ec = executionContext)
 
       trace(
-        r.map { res => Commands.UpdateResponse(res.ok) },
+        r.map { res => Commands.UpdateResponse(res.ok, req) },
         s"Failed to update data in ${persister.collection} with ${modifier} for object: ${selector}"
       ) pipeTo sender()
 
@@ -121,8 +124,18 @@ object Storage extends DefaultBSONHandlers {
     */
   object Commands {
 
+    /**
+      * Marker-trait to designate messages (or responses) of particular interest
+      */
+    trait Traceable {
+      def trace: (String, Seq[Any])
+    }
+
     case class StoreRequest[T](persister: PersisterW[T], obj: T) extends Instance.AutoStartMessage[StoreResponse]
-    case class StoreResponse(ok: Boolean)
+    case class StoreResponse(ok: Boolean, req: StoreRequest[_]) extends Traceable {
+      def trace =
+        ("Stored '{}' ({}) instance / {{}}", Seq(req.obj.getClass.getName, req.obj.hashCode(), req.obj))
+    }
 
     object Store {
       def apply[T](obj: T)(implicit persister: PersisterW[T]): StoreRequest[T] = StoreRequest[T](persister, obj)
@@ -142,7 +155,10 @@ object Storage extends DefaultBSONHandlers {
     }
 
     case class UpdateRequest[T](persister: PersisterBase[T], selector: BSONDocument, modifier: BSONDocument)
-    case class UpdateResponse(ok: Boolean)
+    case class UpdateResponse(ok: Boolean, req: UpdateRequest[_]) extends Traceable {
+      def trace =
+        ("Updated {{}} instance / {{}}", Seq(req.selector, req.modifier))
+    }
 
     object Update {
 
