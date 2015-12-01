@@ -6,6 +6,7 @@ import akka.util.Timeout
 import io.landy.app.App
 import io.landy.app.actors.ExecutingActor
 import io.landy.app.driver.SparkDriverActor
+import io.landy.app.instance.Instance.State.Suspended
 import io.landy.app.model._
 import io.landy.app.storage.Storage
 import io.landy.app.storage.Storage.Commands.{Update, UpdateResponse}
@@ -307,6 +308,11 @@ class InstanceActor(val appId: String) extends ExecutingActor {
   // Controlling hooks
   //
 
+  // TODO(kudinkin): reinforce proper reincarnated state
+
+  private def start(): Future[Instance.Status] =
+    switchState(State.NoData).flatMap { _ => getStatus() }
+
   private def stop(): Future[Instance.Status] =
     switchState(State.Suspended).flatMap { _ => getStatus() }
 
@@ -318,7 +324,7 @@ class InstanceActor(val appId: String) extends ExecutingActor {
 
     case Commands.ReloadConfig() => runState is Any then {
       // TODO(kudinkin): that's a hack until `record` & `appconfig` merged
-      reloadConfig() map { acr => acr.config } pipeTo sender()
+      reloadConfig() map { r => r.config } pipeTo sender()
     }
 
     case Commands.StatusRequest() => runState is Any then {
@@ -345,6 +351,10 @@ class InstanceActor(val appId: String) extends ExecutingActor {
       assert(runState != State.Suspended || runState != State.Training)
 
       train() pipeTo sender()
+    }
+
+    case Commands.StartRequest() => runState is Suspended then {
+      start() pipeTo sender()
     }
 
     case Commands.StopRequest() => runState is Any then {
