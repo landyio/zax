@@ -117,7 +117,6 @@ class SparkDriverActor(private val sc: SparkContext) extends ExecutingActor {
   }
 
   private def trainClassifier(sample: Seq[(Seq[Double], Double)], categorical: BitSet): Future[TrainClassifierResponse] = {
-
     // TODO(kudinkin): Extract
 
     val maxBins     = 32
@@ -139,7 +138,7 @@ class SparkDriverActor(private val sc: SparkContext) extends ExecutingActor {
 
     // TODO(kudinkin): Extract
 
-    log.info(s"Training regressor with sample total of ${sample.size} elements")
+    log.info("Training regressor with sample total of {} elements", sample.size)
 
     val maxBins     = 32
     val maxDepth    = 16
@@ -152,10 +151,10 @@ class SparkDriverActor(private val sc: SparkContext) extends ExecutingActor {
 
     val error = evaluate(model, test)
 
-    log.info( s"Finished training regressor {${model}} \n" +
-              s"Sample #:   ${sample.size}             \n" +
-              s"Categories: ${categories}              \n" +
-              s"Error:      ${error}                   \n")
+    log.info(s"Finished training regressor {} \n" +
+             s"Sample #:   {}                 \n" +
+             s"Categories: {}                 \n" +
+             s"Error:      {}                 \n", model, sample.size, categories, error)
 
     Future { TrainRegressorResponse(new SparkDecisionTreeRegressionModel(model, mapping), error) }
   }

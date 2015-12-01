@@ -260,7 +260,7 @@ class InstanceActor(val appId: String) extends ExecutingActor {
       Instance.Record.`runState` -> state
     }).map      { r => r.ok }
       .andThen  {
-        case Failure(t) => log.error(t, s"Failed to switch state to '${state}'!")
+        case Failure(t) => log.error(t, s"Failed to switch state to '{}'!", state)
       }
       .flatMap  {
         case _ => reloadConfig()
