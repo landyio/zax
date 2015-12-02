@@ -10,9 +10,11 @@ import io.landy.app.util.Logging
 import reactivemongo.bson.DefaultBSONHandlers
 
 import scala.concurrent.Future
-import scala.language.implicitConversions
 import scala.pickling.Unpickler
 import scala.util.{Failure, Success}
+
+import scala.language.implicitConversions
+import scala.language.existentials
 
 class StorageActor extends ExecutingActor {
 
