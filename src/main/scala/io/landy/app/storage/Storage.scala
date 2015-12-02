@@ -117,7 +117,10 @@ object Storage extends DefaultBSONHandlers {
     * @param id object-id
     * @return bson-document (so called 'selector')
     */
-  private def byId(id: Id) = BSONDocument(`_id` -> BSONObjectID(id))
+  private def byId(appId: Instance.Id) = {
+    import Persisters.instanceIdPersister
+    BSONDocument(`_id` -> appId)
+  }
 
   /**
     * Commands accepted by the storaging actor
@@ -146,7 +149,7 @@ object Storage extends DefaultBSONHandlers {
 
     object Load {
 
-      def apply[T](id: Id)(implicit persister: PersisterR[T]) =
+      def apply[T](id: Instance.Id)(implicit persister: PersisterR[T]) =
         LoadRequest[T](persister, byId(id), 1)
 
       def apply[T](selector: Producer[(String, BSONValue)]*)(maxSize: Int = Int.MaxValue)(implicit persister: PersisterR[T]) =
@@ -169,7 +172,7 @@ object Storage extends DefaultBSONHandlers {
           modifier = BSONDocument(modifier:_*)
         )
 
-      def apply[T](id: Id)(modifier: Producer[(String, BSONValue)]*)(implicit persister: PersisterBase[T]) =
+      def apply[T](id: Instance.Id)(modifier: Producer[(String, BSONValue)]*)(implicit persister: PersisterBase[T]) =
         UpdateRequest[T](
           persister = persister,
           selector = byId(id),
@@ -288,6 +291,12 @@ object Storage extends DefaultBSONHandlers {
       }
 
 
+    implicit val instanceIdPersister =
+      new BSONReader[BSONObjectID, Instance.Id] with BSONWriter[Instance.Id, BSONObjectID] {
+        override def write(d: Instance.Id): BSONObjectID = BSONObjectID(d.value)
+        override def read(bson: BSONObjectID): Instance.Id = Instance.Id(bson.stringify)
+      }
+
     implicit val startEventPersister =
       new Persister[StartEvent] {
         import Event._
@@ -297,7 +306,7 @@ object Storage extends DefaultBSONHandlers {
 
         override def write(t: StartEvent): BSONDocument =
           BSONDocument(
-            `appId`     -> BSONObjectID(t.appId),
+            `appId`     -> t.appId,
             `type`      -> `type:Start`,
             `timestamp` -> t.timestamp,
             `session`   -> t.session,
@@ -324,7 +333,7 @@ object Storage extends DefaultBSONHandlers {
 
         override def write(t: FinishEvent) =
           BSONDocument(
-            `appId`     -> BSONObjectID(t.appId),
+            `appId`     -> t.appId,
             `type`      -> `type:Finish`,
             `timestamp` -> t.timestamp,
             `session`   -> t.session
@@ -546,14 +555,14 @@ object Storage extends DefaultBSONHandlers {
 
         override def write(t: Instance.Record): BSONDocument =
           BSONDocument(
-            `_id`       -> BSONObjectID(t.appId),
+            `_id`       -> t.appId,
             `runState`  -> BSON.writeDocument(t.runState),
             `config`    -> BSON.writeDocument(t.config)
           )
 
         override def read(bson: BSONDocument): Instance.Record =
           Instance.Record(
-            appId     = bson.getAs[BSONObjectID]    (`_id`)      .map { i => i.stringify } getOrElse { "" },
+            appId     = bson.getAs[Instance.Id]     (`_id`)      .getOrElse { Instance.Id("") },
             runState  = bson.getAs[State]           (`runState`) .get, // .getOrElse { AppInstance.State.Suspended },
             config    = bson.getAs[Instance.Config] (`config`)   .get
           )

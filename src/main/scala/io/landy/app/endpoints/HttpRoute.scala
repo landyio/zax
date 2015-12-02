@@ -69,7 +69,7 @@ trait PrivateEndpoint extends AppEndpoint {
             ask[StoreResponse](storageRef, Store(Instance.Record(appId = appId, config = config)))
               .map { res =>
                 JsObject(
-                  "id"      -> JsString(appId),
+                  "id"      -> JsString(appId.value),
                   "result"  -> JsBoolean(res.ok)
                 )
               }
@@ -95,7 +95,7 @@ trait PrivateEndpoint extends AppEndpoint {
             askApp[Instance.Status](appId, StartRequest())
               .map { v =>
                 JsObject(
-                  "id"      -> JsString(appId),
+                  "id"      -> JsString(appId.value),
                   "result"  -> JsBoolean(true),
                   "status"  -> v.toJson.asJsObject)
               }
@@ -111,7 +111,7 @@ trait PrivateEndpoint extends AppEndpoint {
             askApp[Instance.Status](appId, StopRequest())
               .map { v =>
                 JsObject(
-                  "id"      -> JsString(appId),
+                  "id"      -> JsString(appId.value),
                   "result"  -> JsBoolean(true),
                   "status"  -> v.toJson.asJsObject
                 )

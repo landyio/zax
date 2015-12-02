@@ -10,10 +10,10 @@ class MediatorActor extends ExecutingActor {
   import Mediator._
 
   @inline
-  private def appRef(appId: String): Option[ActorRef] = context.child(name = Instance.actorName(appId))
+  private def appRef(appId: Instance.Id): Option[ActorRef] = context.child(name = Instance.actorName(appId))
 
   @inline
-  private def appRef(appId: String, forceStart: Boolean): Option[ActorRef] =
+  private def appRef(appId: Instance.Id, forceStart: Boolean): Option[ActorRef] =
     appRef(appId).orElse(
       if (forceStart)
         Some(forceStartInstance(appId))
@@ -22,7 +22,7 @@ class MediatorActor extends ExecutingActor {
     )
 
   @inline
-  private def startInstance(appId: String): Boolean = {
+  private def startInstance(appId: Instance.Id): Boolean = {
     appRef(appId, forceStart = true) match {
       case Some(_) => true
       case None => false
@@ -30,7 +30,7 @@ class MediatorActor extends ExecutingActor {
   }
 
   @inline
-  private def stopInstance(appId: String): Boolean = {
+  private def stopInstance(appId: Instance.Id): Boolean = {
     appRef(appId) collect {
       case ref => context.stop(ref)
     }
@@ -38,7 +38,7 @@ class MediatorActor extends ExecutingActor {
   }
 
   @inline
-  private def forceStartInstance(appId: String): ActorRef = context.actorOf(
+  private def forceStartInstance(appId: Instance.Id): ActorRef = context.actorOf(
     props = Props(classOf[InstanceActor], appId),
     name = Instance.actorName(appId)
   )
@@ -51,7 +51,7 @@ class MediatorActor extends ExecutingActor {
       case Commands.Forward(appId, message) =>
         appRef(appId, forceStart = message.isInstanceOf[Instance.AutoStartMessage[_]]) match {
           case Some(appRef) => appRef.forward(message)
-          case None         => sender ! akka.actor.Status.Failure(new NoSuchElementException(appId))
+          case None         => sender ! akka.actor.Status.Failure(new NoSuchElementException(appId.value))
         }
   }
 

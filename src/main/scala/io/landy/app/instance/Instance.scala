@@ -393,11 +393,17 @@ object Instance {
 
   import scala.concurrent.duration._
 
-  type Id = String
+  /**
+    * NOTA BENE
+    * That's here primarily to hedge implicit conversions of the `String` to `BSONString`
+    */
+  case class Id(value: String) {
+    override implicit def toString = value
+  }
 
-  def genId(): Id = BSONObjectID.generate.stringify
+  def genId(): Id = Id(BSONObjectID.generate.stringify)
   def padId(id: String): Id = id match {
-    case _ => leftPad(id, 24, '0')
+    case _ => Id(leftPad(id, 24, '0'))
   }
 
   def actorName(appId: Instance.Id): String = {
