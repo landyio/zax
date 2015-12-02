@@ -214,7 +214,8 @@ trait PublicEndpoint extends AppEndpoint {
         entity(as[JsObject]) { json => {
           val ev: FinishEvent = json.convertTo[FinishEvent]
 
-          storeFor(appId, ev.copy(appId = appId))
+          storeFor(appId, ev.copy(appId     = appId,
+                                  timestamp = System.currentTimeMillis()))
 
           complete("")
         }} ~ die(`json body required`)
