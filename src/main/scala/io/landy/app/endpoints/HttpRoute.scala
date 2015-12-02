@@ -136,6 +136,16 @@ trait PrivateEndpoint extends AppEndpoint {
 
 trait PublicEndpoint extends AppEndpoint {
 
+  /**
+    * Greps additional info about environment
+    */
+  private def mapAdditionalInfo(ip: RemoteAddress, userTs: Long): Map[String, String] = {
+    Map {
+      "ip"      -> ip.toOption.map { case ip => ip.getHostAddress }.getOrElse("0.0.0.0")
+      "userTs"  -> userTs.toString
+    }
+  }
+
   import Storage.Persisters._
 
   @inline
@@ -161,12 +171,9 @@ trait PublicEndpoint extends AppEndpoint {
         entity(as[JsObject]) { json => clientIP { ip => {
           val ev = json.convertTo[StartEvent]
 
-          val additional = Map {
-            "ip"        -> ip.toOption.map { case ip => ip.getHostAddress }.getOrElse("0.0.0.0")
-            "serverTs"  -> System.currentTimeMillis().toString
-          }
-
-          storeFor(appId, ev.copy(appId = appId, identity = ev.identity ++ additional))
+          storeFor(appId, ev.copy(  appId     = appId,
+                                    timestamp = System.currentTimeMillis(),
+                                    identity  = ev.identity ++ mapAdditionalInfo(ip, ev.timestamp)))
 
           complete(
             Future {
@@ -181,17 +188,18 @@ trait PublicEndpoint extends AppEndpoint {
         entity(as[JsObject]) { json => clientIP { ip => {
           val ev = json.convertTo[PredictEvent].copy(appId = appId)
 
-          val additional = Map {
-            "ip"        -> ip.toOption.map { case ip => ip.getHostAddress }.getOrElse("0.0.0.0")
-            "serverTs"  -> System.currentTimeMillis().toString
-          }
+          val identity = ev.identity ++ mapAdditionalInfo(ip, ev.timestamp)
 
-          val prediction = predict(appId = ev.appId, identity = ev.identity ++ additional)
+          val prediction = predict(appId = ev.appId, identity = identity)
 
           complete(
             prediction
               .andThen {
-                case Success(((_, id), _)) => storeFor(appId, StartEvent(appId, ev.session, ev.timestamp, ev.identity, variation = id))
+                case Success(((_, id), _)) => storeFor(appId, StartEvent( appId     = appId,
+                                                                          session   = ev.session,
+                                                                          timestamp = System.currentTimeMillis(),
+                                                                          identity  = identity,
+                                                                          variation = id))
               }
               .map { case ((v, id), state) =>
                 JsObject(
