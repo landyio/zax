@@ -54,36 +54,38 @@ class InstanceActor(val appId: Instance.Id) extends ExecutingActor {
     * @return whether app-instance is in eligible state (for training) or not
     */
   private def checkEligibility: Future[Boolean] = {
-
-    val MINIMAL_POSITIVE_OUTCOMES_NO  = 1   /* 25 */
-    val MINIMAL_SAMPLE_SIZE           = 10  /* 100 */
-
-    //
-    // TODO(kudinkin): We need some policy over here
-    //
-
     runState match {
-
       case State.Predicting(from) =>
-        getStatus(from.ts).map { s =>
-          s.eventsAllFinish >= MINIMAL_POSITIVE_OUTCOMES_NO &&
-          s.eventsAllStart  >= MINIMAL_SAMPLE_SIZE
-        }
+        getStatus(from.ts).map { isEligible }
 
       case State.NoData =>
-        getStatus().map { s =>
-          s.eventsAllFinish >= MINIMAL_POSITIVE_OUTCOMES_NO &&
-          s.eventsAllStart  >= MINIMAL_SAMPLE_SIZE
-        }
+        getStatus().map { isEligible }
 
       case _ => Future { false }
     }
   }
 
+  private def isEligible(s: Status): Boolean = {
+
+    //
+    // TODO(kudinkin): We need some policy over here
+    //
+
+    val MINIMAL_POSITIVE_OUTCOMES_NO  = 1   /* 25 */
+    val MINIMAL_SAMPLE_SIZE           = 10  /* 100 */
+
+    val eligible = s.eventsAllFinish >= MINIMAL_POSITIVE_OUTCOMES_NO && s.eventsAllStart >= MINIMAL_SAMPLE_SIZE
+
+    if (!eligible)
+      log.debug("Instance {{}} isn't eligible for training right now! Status: {{}}", appId, s)
+
+    eligible
+  }
+
   /**
     * Retrains specified app
     */
-  private def train(): Future[Option[Double]] = {
+  private def trainIfEligible(): Future[Option[Double]] = {
 
     import SparkDriverActor.Commands.{TrainRegressor, TrainRegressorResponse}
 
@@ -339,7 +341,7 @@ class InstanceActor(val appId: Instance.Id) extends ExecutingActor {
 
     case Commands.PredictRequest(uid) => runState except State.Suspended then {
       // TODO(kudinkin): move?
-      self    ! Commands.TrainRequest()
+      self ! Commands.TrainRequest()
 
       val (id, v) = predict(uid)
 
@@ -351,7 +353,7 @@ class InstanceActor(val appId: Instance.Id) extends ExecutingActor {
 
       assert(runState != State.Suspended || runState != State.Training)
 
-      train() pipeTo sender()
+      trainIfEligible() pipeTo sender()
     }
 
     case Commands.StartRequest() => runState is Suspended then {
