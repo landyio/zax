@@ -24,7 +24,7 @@ function submit(session, ts, visitor, vars, targetVar, appId) {
     session:    '' + session,
     timestamp:  ts,
     identity:   visitor,
-    variation:  vars[vid]
+    variation:  vid // vars[vid]
   };
 
 
