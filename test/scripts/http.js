@@ -2,10 +2,10 @@
 var http = require('http');
 
 
-function request(method, path, port, data, succCallback, verbose) {
+function request(host, method, path, port, data, succCallback, verbose) {
 
   var options = {
-    hostname: 'localhost',
+    hostname: host,
     port:     port,
     path:     path,
     method:   method,
@@ -41,11 +41,11 @@ function request(method, path, port, data, succCallback, verbose) {
   });
 }
 
-exports.post = function post(path, port, data, verbose) {
+exports.post = function post(host, path, port, data, verbose) {
   var data = JSON.stringify(data);
 
   return new Promise(function (succCallback) {
-    var req = request('POST', path, port, data, succCallback, verbose);
+    var req = request(host, 'POST', path, port, data, succCallback, verbose);
 
     // _DBG
     console.log("[SENT]: ", data);
@@ -56,8 +56,8 @@ exports.post = function post(path, port, data, verbose) {
 }
 
 
-exports.get = function get(path, port, data, verbose) {
+exports.get = function get(host, path, port, data, verbose) {
   return new Promise(function (succCallback) {
-    request('GET', path, port, data, verbose).end();
+    request(host, 'GET', path, port, data, verbose).end();
   });
 }
