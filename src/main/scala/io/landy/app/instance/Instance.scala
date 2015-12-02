@@ -400,7 +400,7 @@ object Instance {
     * That's here primarily to hedge implicit conversions of the `String` to `BSONString`
     */
   case class Id(value: String) {
-    override implicit def toString = value
+    override def toString = value
   }
 
   def genId(): Id = Id(BSONObjectID.generate.stringify)
