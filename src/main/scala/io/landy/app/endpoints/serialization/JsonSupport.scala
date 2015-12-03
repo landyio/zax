@@ -149,7 +149,10 @@ trait JsonSupport extends DefaultJsonProtocol with SprayJsonSupport {
         session   = field[String]       (value, `session`)    .get, /* mandatory */
         variation = field[Variation.Id] (value, `variation`)  .get, /* mandatory */
         identity  = field[UserIdentity] (value, `identity`,   UserIdentity.empty),
-        timestamp = field[Long]         (value, `timestamp`,  0l)
+        timestamp = field[Long]         (value, `timestamp`,  0l),
+
+        // Events are sampled by default
+        kind = StartEvent.Kind.Random
       )
   }
 

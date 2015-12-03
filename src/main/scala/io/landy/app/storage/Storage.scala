@@ -335,7 +335,8 @@ object Storage extends DefaultBSONHandlers {
             `timestamp` -> t.timestamp,
             `session`   -> t.session,
             `identity`  -> t.identity,
-            `variation` -> t.variation
+            `variation` -> t.variation,
+            `kind`      -> t.kind.toString
           )
 
         override def read(bson: BSONDocument): StartEvent =
@@ -344,7 +345,9 @@ object Storage extends DefaultBSONHandlers {
             session   = bson.getAs[String]        (`session`)   .get,
             timestamp = bson.getAs[Long]          (`timestamp`) .get,
             identity  = bson.getAs[UserIdentity]  (`identity`)  .get,
-            variation = bson.getAs[Variation.Id]  (`variation`) .get
+            variation = bson.getAs[Variation.Id]  (`variation`) .get,
+            kind      = bson.getAs[String]        (`kind`)      .map { StartEvent.Kind.withName }
+                                                                .get
           )
       }
 

@@ -199,7 +199,8 @@ trait PublicEndpoint extends AppEndpoint {
                                                                     session   = ev.session,
                                                                     timestamp = System.currentTimeMillis(),
                                                                     identity  = identity,
-                                                                    variation = v.id))
+                                                                    variation = v.id,
+                                                                    kind      = StartEvent.Kind.Predicted))
               }
               .map { case (v, state) =>
                 JsObject(
