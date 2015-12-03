@@ -576,8 +576,8 @@ object Storage extends DefaultBSONHandlers {
       new Persister[Instance.Record] {
         import Instance.Record._
 
-        override val database: String         = c.getString("landy.mongo.database.master")
-        override val collection: String = "instances"
+        override val database:    String  = c.getString("landy.mongo.database.master")
+        override val collection:  String  = "instances"
 
         override def write(t: Instance.Record): BSONDocument =
           BSONDocument(
