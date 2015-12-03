@@ -145,15 +145,19 @@ trait JsonSupport extends DefaultJsonProtocol with SprayJsonSupport {
       )
 
     def read(value: JsValue): StartEvent =
-      StartEvent(
-        session   = field[String]       (value, `session`)    .get, /* mandatory */
-        variation = field[Variation.Id] (value, `variation`)  .get, /* mandatory */
-        identity  = field[UserIdentity] (value, `identity`,   UserIdentity.empty),
-        timestamp = field[Long]         (value, `timestamp`,  0l),
+      { for (
+          s <- field[String]       (value, `session`);
+          v <- field[Variation.Id] (value, `variation`)
+        ) yield StartEvent(
+          session   = s,
+          variation = v,
+          identity  = field[UserIdentity] (value, `identity`,   UserIdentity.empty),
+          timestamp = field[Long]         (value, `timestamp`,  0l),
 
-        // Events are sampled by default
-        kind = StartEvent.Kind.Random
-      )
+          // Events are sampled by default
+          kind      = StartEvent.Kind.Random
+        )
+      }.get
   }
 
   /**

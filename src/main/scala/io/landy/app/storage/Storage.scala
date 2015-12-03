@@ -587,11 +587,17 @@ object Storage extends DefaultBSONHandlers {
           )
 
         override def read(bson: BSONDocument): Instance.Record =
-          Instance.Record(
-            appId     = bson.getAs[Instance.Id]     (`_id`)      .getOrElse { Instance.Id("") },
-            runState  = bson.getAs[State]           (`runState`) .get, // .getOrElse { AppInstance.State.Suspended },
-            config    = bson.getAs[Instance.Config] (`config`)   .get
+        { for (
+            s <- bson.getAs[State]            (`runState`);
+            c <- bson.getAs[Instance.Config]  (`config`)
+          ) yield Instance.Record(
+            appId     = bson.getAs[Instance.Id](`_id`).getOrElse { Instance.Id("") },
+            runState  = s,
+            config    = c
           )
+        }.get
+
+
       }
 
   }
