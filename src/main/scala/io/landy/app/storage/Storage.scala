@@ -3,10 +3,11 @@ package io.landy.app.storage
 import akka.pattern.pipe
 import com.typesafe.config.{Config, ConfigFactory}
 import io.landy.app.actors.ExecutingActor
-import io.landy.app.instance.Instance.State
+import io.landy.app.instance.Instance.{Id, State}
 import io.landy.app.instance._
 import io.landy.app.model._
 import io.landy.app.util.Logging
+import org.apache.commons.lang.StringUtils
 import reactivemongo.bson.DefaultBSONHandlers
 
 import scala.concurrent.Future
@@ -116,12 +117,21 @@ object Storage extends DefaultBSONHandlers {
   /**
     * Helper generating selector for Mongo queries by supplied id of the object
     *
-    * @param id object-id
+    * @param appId object-id
     * @return bson-document (so called 'selector')
     */
   private def byId(appId: Instance.Id) = {
     import Persisters.instanceIdPersister
-    BSONDocument(`_id` -> appId)
+    BSONDocument(`_id` -> appId.value)
+  }
+
+  /**
+    * Helper padding id with zero to become BSON-compliant
+    * @param id to be padded
+    * @return padded id
+    */
+  def padId(id: String): String = id match {
+    case _ => StringUtils.leftPad(id, 24, '0')
   }
 
   /**
@@ -266,14 +276,34 @@ object Storage extends DefaultBSONHandlers {
           bson.asOpt[UserIdentity.Params] collect { case ps => UserIdentity(ps) } getOrElse UserIdentity.empty
       }
 
+    implicit val instanceIdPersister =
+      new BSONReader[BSONObjectID, Instance.Id] with BSONWriter[Instance.Id, BSONObjectID] {
+        override def write(d: Instance.Id): BSONObjectID = BSONObjectID(d.value)
+        override def read(bson: BSONObjectID): Instance.Id = Instance.Id(bson.stringify)
+      }
+
+    implicit val variationIdPersister =
+      new BSONReader[BSONObjectID, Variation.Id] with BSONWriter[Variation.Id, BSONObjectID] {
+        override def write(d: Variation.Id): BSONObjectID = BSONObjectID(d.value)
+        override def read(bson: BSONObjectID): Variation.Id = Variation.Id(bson.stringify)
+      }
+
     implicit val variationPersister =
-      new BSONReader[BSONString, Variation] with BSONWriter[Variation, BSONString] {
+      new BSONDocumentReader[Variation] with BSONDocumentWriter[Variation] {
 
-        override def write(v: Variation): BSONString =
-          BSON.write(v.value)
+        import Variation._
 
-        override def read(bson: BSONString): Variation =
-          Variation(bson.value)
+        override def write(v: Variation): BSONDocument =
+          BSONDocument(
+            `value` -> v.value,
+            `id`    -> v.id
+          )
+
+        override def read(bson: BSONDocument): Variation =
+          Variation(
+            id    = bson.getAs[Variation.Id]    (`id`)    .get,
+            value = bson.getAs[Variation.Type]  (`value`) .get
+          )
       }
 
     implicit val userDataDescriptorPersister =
@@ -292,19 +322,12 @@ object Storage extends DefaultBSONHandlers {
           )
       }
 
-
-    implicit val instanceIdPersister =
-      new BSONReader[BSONObjectID, Instance.Id] with BSONWriter[Instance.Id, BSONObjectID] {
-        override def write(d: Instance.Id): BSONObjectID = BSONObjectID(d.value)
-        override def read(bson: BSONObjectID): Instance.Id = Instance.Id(bson.stringify)
-      }
-
     implicit val startEventPersister =
       new Persister[StartEvent] {
         import Event._
 
-        override val database: String   = c.getString("landy.mongo.database.events")
-        override val collection: String = `type:Start`
+        override val database:    String = c.getString("landy.mongo.database.events")
+        override val collection:  String = `type:Start`
 
         override def write(t: StartEvent): BSONDocument =
           BSONDocument(
@@ -313,7 +336,7 @@ object Storage extends DefaultBSONHandlers {
             `timestamp` -> t.timestamp,
             `session`   -> t.session,
             `identity`  -> BSON.writeDocument(t.identity),
-            `variation` -> BSON.write(t.variation)
+            `variation` -> t.variation
           )
 
         override def read(bson: BSONDocument): StartEvent =
@@ -557,7 +580,7 @@ object Storage extends DefaultBSONHandlers {
 
         override def write(t: Instance.Record): BSONDocument =
           BSONDocument(
-            `_id`       -> t.appId,
+            `_id`       -> t.appId.value,
             `runState`  -> BSON.writeDocument(t.runState),
             `config`    -> BSON.writeDocument(t.config)
           )

@@ -34,11 +34,19 @@ object UserIdentity {
   *
   * @param value unique id of the variation
   */
-case class Variation(value: Variation.Type)
+case class Variation(id: Variation.Id, value: Variation.Type)
 
 object Variation {
   type Type = String
-  type Id   = Int
+
+  /**
+    * NOTA BENE
+    * That's here primarily to hedge implicit conversions of the `String` to `BSONString`
+    */
+  case class Id(value: String)
+
+  val `value` = "value"
+  val `id`    = "id"
 }
 
 

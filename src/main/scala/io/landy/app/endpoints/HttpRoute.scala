@@ -149,11 +149,11 @@ trait PublicEndpoint extends AppEndpoint {
   import Storage.Persisters._
 
   @inline
-  private[endpoints] def predict(appId: Instance.Id, identity: UserIdentity): Future[((Variation, Variation.Id), Instance.State)] = {
+  private[endpoints] def predict(appId: Instance.Id, identity: UserIdentity): Future[(Variation, Instance.State)] = {
     import Instance.Commands.{PredictRequest, PredictResponse, predictTimeout}
 
     askApp[PredictResponse](appId, PredictRequest(identity))(timeout = predictTimeout)
-      .map { r => ((r.variation, r.id), r.state) }
+      .map { r => (r.variation, r.state) }
   }
 
   @inline
@@ -195,13 +195,13 @@ trait PublicEndpoint extends AppEndpoint {
           complete(
             prediction
               .andThen {
-                case Success(((_, id), _)) => storeFor(appId, StartEvent( appId     = appId,
-                                                                          session   = ev.session,
-                                                                          timestamp = System.currentTimeMillis(),
-                                                                          identity  = identity,
-                                                                          variation = id))
+                case Success((v, _)) => storeFor(appId, StartEvent( appId     = appId,
+                                                                    session   = ev.session,
+                                                                    timestamp = System.currentTimeMillis(),
+                                                                    identity  = identity,
+                                                                    variation = v.id))
               }
-              .map { case ((v, id), state) =>
+              .map { case (v, state) =>
                 JsObject(
                   "variation" -> v.toJson,
                   "predicted" -> state.isInstanceOf[Instance.State.Predicting].toJson
@@ -265,12 +265,14 @@ trait AppEndpoint extends Endpoint {
     askApp[StoreResponse](appId, Store(element)(persister = persister))
   }
 
-  override private[endpoints] def route: Route =
+  override private[endpoints] def route: Route = {
+    import Storage.padId
     pathPrefix("app" / Segment) {
       segment: String => {
-        appRoute(Instance.padId(segment))
+        appRoute(Instance.Id(padId(segment)))
       }
     }
+  }
 
   private[endpoints] def appRoute(appId: Instance.Id): Route
 }

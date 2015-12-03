@@ -24,7 +24,7 @@ function submit(session, ts, visitor, vars, targetVar, appId) {
     session:    '' + session,
     timestamp:  ts,
     identity:   visitor,
-    variation:  vid // vars[vid]
+    variation:  vars[vid].id
   };
 
 
@@ -52,7 +52,9 @@ function submit(session, ts, visitor, vars, targetVar, appId) {
   
   var appId = "1";
 
-  var variations = [ "1", "2" ];
+  var variations = [ 
+    { id: "1", value: "Hello" }, 
+    { id: "2", value: "World" } ];
 
   // Step #1: Push app-conf
 

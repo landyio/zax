@@ -2,6 +2,7 @@ package io.landy.app.endpoints.serialization
 
 import io.landy.app.instance.Instance
 import io.landy.app.model._
+import io.landy.app.storage.Storage
 import spray.httpx.SprayJsonSupport
 import spray.json._
 
@@ -26,15 +27,40 @@ trait JsonSupport extends DefaultJsonProtocol with SprayJsonSupport {
   }
 
   /**
+    * `Variation.Id`
+    */
+  private implicit object VariationIdJsonFormat extends RootJsonFormat[Variation.Id] {
+    import Storage.padId
+
+    override def read(json: JsValue): Variation.Id =
+      Variation.Id(
+        padId(json.asInstanceOf[JsString].value)
+      )
+
+    override def write(obj: Variation.Id): JsValue =
+      JsString(obj.value)
+  }
+
+  /**
     * `Variation`
     */
   private[endpoints] implicit object VariationJsonFormat extends RootJsonFormat[Variation] {
 
-    override def write(o: Variation): JsValue =
-      o.value.toJson
+    import Variation._
 
-    override def read(value: JsValue): Variation =
-      Variation(value.convertTo[Variation.Type])
+    override def write(o: Variation): JsValue =
+      JsObject(
+        `value` -> o.value.toJson,
+        `id`    -> o.id.toJson
+      )
+
+    override def read(value: JsValue): Variation = {
+      { for (
+          id    <- field[Variation.Id]   (value, Variation.`id`);
+          value <- field[Variation.Type] (value, Variation.`value`)
+        ) yield Variation(id, value)
+      } get
+    }
   }
 
   /**
@@ -120,10 +146,10 @@ trait JsonSupport extends DefaultJsonProtocol with SprayJsonSupport {
 
     def read(value: JsValue): StartEvent =
       StartEvent(
-        session   = field[String]       (value, `session`,    ""),
-        timestamp = field[Long]         (value, `timestamp`,  0l),
+        session   = field[String]       (value, `session`)    .get, /* mandatory */
+        variation = field[Variation.Id] (value, `variation`)  .get, /* mandatory */
         identity  = field[UserIdentity] (value, `identity`,   UserIdentity.empty),
-        variation = field[Variation.Id] (value, `variation`,  -1)
+        timestamp = field[Long]         (value, `timestamp`,  0l)
       )
   }
 
@@ -156,8 +182,8 @@ trait JsonSupport extends DefaultJsonProtocol with SprayJsonSupport {
     import Event._
 
     def write(event: FinishEvent): JsObject = JsObject(
-      `type` -> JsString("finish"),
-      `session` -> JsString(event.session),
+      `type`      -> JsString("finish"),
+      `session`   -> JsString(event.session),
       `timestamp` -> JsNumber(event.timestamp)
     )
 

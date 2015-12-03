@@ -23,7 +23,7 @@ trait Predictor {
     * @param identity user's identity
     * @return         (presumably) most relevant variation
     */
-  def predictFor(identity: UserIdentity): (Variation.Id, Variation)
+  def predictFor(identity: UserIdentity): Variation
 
 }
 
@@ -71,9 +71,9 @@ trait Classificator extends Predictor {
 
   val model: ClassificationModel
 
-  def predictFor(identity: UserIdentity): (Variation.Id, Variation) =
+  def predictFor(identity: UserIdentity): Variation =
     model.predict(identity.toFeatures(userDataDescriptors)) match {
-      case id => (id, variations(id))
+      case id => variations(id)
     }
 
 }
@@ -85,7 +85,7 @@ trait Regressor extends Predictor {
 
   val model: RegressionModel
 
-  override def predictFor(identity: UserIdentity): (Variation.Id, Variation) = {
+  override def predictFor(identity: UserIdentity): Variation = {
     val factor: Double = 1e-2
     def rand(): Double = factor * Random.nextInt() / Int.MaxValue
 
@@ -93,10 +93,10 @@ trait Regressor extends Predictor {
       .zipWithIndex
       .par
       .toStream
-      .map { case (v, id) => probability(identity, id) -> (id, v) }
-      .map { case (p, (id, v))  => (p + rand()) -> (id, v) }
+      .map { case (v, id) => probability(identity, id) -> v }
+      .map { case (p, v)  => (p + rand()) -> v }
       .sortBy { case (p, _) => -p }
-      .collectFirst { case (_, (id, v)) => (id, v) }
+      .collectFirst { case (_, v) => v }
       .get
   }
 

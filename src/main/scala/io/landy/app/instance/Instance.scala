@@ -38,7 +38,7 @@ class InstanceActor(val appId: Instance.Id) extends ExecutingActor {
     *
     * @return prediction result (given user-{{{identity}}})
     **/
-  private def predict(identity: UserIdentity): (Variation.Id, Variation) = {
+  private def predict(identity: UserIdentity): Variation = {
     val v = predictor
               .map { p => p.predictFor(identity) }
               .get
@@ -135,10 +135,15 @@ class InstanceActor(val appId: Instance.Id) extends ExecutingActor {
     predictor match {
       case Some(p) =>
 
+        // Map variations into sequential indices
+        val mapped = getConfig.variations .zipWithIndex
+                                          .map { case (v, idx) => v.id -> idx }
+                                          .toMap
+
         // Convert sample into user-data-descriptors into numerical 'features'
-        val s = sample.map {
-          case ((uid, vid), goal) =>
-            (uid.toFeatures(p.config.userDataDescriptors) ++ Seq(vid.toDouble), goal.toDouble)
+        val s = sample.collect {
+          case ((uid, v), goal) if mapped.contains(v) =>
+            (uid.toFeatures(p.config.userDataDescriptors) ++ Seq(mapped(v).toDouble), goal.toDouble)
         }
 
         // Designate peculiar features as categorical ones
@@ -341,11 +346,8 @@ class InstanceActor(val appId: Instance.Id) extends ExecutingActor {
 
     case Commands.PredictRequest(uid) => runState except State.Suspended then {
       // TODO(kudinkin): move?
-      self ! Commands.TrainRequest()
-
-      val (id, v) = predict(uid)
-
-      sender ! Commands.PredictResponse(id, v, runState)
+      self    ! Commands.TrainRequest()
+      sender  ! Commands.PredictResponse(predict(uid), runState)
     }
 
     case Commands.TrainRequest() => runState except State.Suspended or
@@ -399,17 +401,10 @@ object Instance {
     * NOTA BENE
     * That's here primarily to hedge implicit conversions of the `String` to `BSONString`
     */
-  case class Id(value: String) {
-    override def toString = value
-  }
-
-  def genId(): Id = Id(BSONObjectID.generate.stringify)
-  def padId(id: String): Id = id match {
-    case _ => Id(leftPad(id, 24, '0'))
-  }
+  case class Id(value: String)
 
   def actorName(appId: Instance.Id): String = {
-    s"app-$appId"
+    s"app-${appId.value}"
   }
 
 
@@ -581,7 +576,7 @@ object Instance {
     val predictTimeout: Timeout = 500.milliseconds
 
     case class PredictRequest(identity: UserIdentity) extends AutoStartMessage[PredictResponse]
-    case class PredictResponse(id: Variation.Id, variation: Variation, state: Instance.State)
+    case class PredictResponse(variation: Variation, state: Instance.State)
 
     val trainTimeout: Timeout = 30.seconds
 
