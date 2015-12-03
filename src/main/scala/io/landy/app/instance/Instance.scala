@@ -203,7 +203,7 @@ class InstanceActor(val appId: Instance.Id) extends ExecutingActor {
       r <- ask[LoadResponse[Instance.Record]](this.storage(), Load[Instance.Record](appId))
     ) yield r.seq.collectFirst(Identity.partial()) } map {
       case Some(c)  => c
-      case None     => throw new Exception(s"Failed to retrieve app's {#${appId}} configuration!")
+      case None     => throw new Exception(s"Failed to retrieve app's {#${appId.value}} configuration!")
     }
 
     f.andThen {

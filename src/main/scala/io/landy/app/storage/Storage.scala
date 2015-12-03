@@ -122,7 +122,7 @@ object Storage extends DefaultBSONHandlers {
     */
   private def byId(appId: Instance.Id) = {
     import Persisters.instanceIdPersister
-    BSONDocument(`_id` -> appId.value)
+    BSONDocument(`_id` -> appId)
   }
 
   /**
@@ -581,17 +581,18 @@ object Storage extends DefaultBSONHandlers {
 
         override def write(t: Instance.Record): BSONDocument =
           BSONDocument(
-            `_id`       -> t.appId.value,
+            `_id`       -> t.appId,
             `runState`  -> t.runState,
             `config`    -> t.config
           )
 
         override def read(bson: BSONDocument): Instance.Record =
         { for (
-            s <- bson.getAs[State]            (`runState`);
-            c <- bson.getAs[Instance.Config]  (`config`)
+            id  <- bson.getAs[Instance.Id]      (`_id`);
+            s   <- bson.getAs[State]            (`runState`);
+            c   <- bson.getAs[Instance.Config]  (`config`)
           ) yield Instance.Record(
-            appId     = bson.getAs[Instance.Id](`_id`).getOrElse { Instance.Id("") },
+            appId     = id,
             runState  = s,
             config    = c
           )
