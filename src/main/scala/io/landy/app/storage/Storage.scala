@@ -334,7 +334,7 @@ object Storage extends DefaultBSONHandlers {
             `appId`     -> t.appId,
             `timestamp` -> t.timestamp,
             `session`   -> t.session,
-            `identity`  -> BSON.writeDocument(t.identity),
+            `identity`  -> t.identity,
             `variation` -> t.variation
           )
 
@@ -579,8 +579,8 @@ object Storage extends DefaultBSONHandlers {
         override def write(t: Instance.Record): BSONDocument =
           BSONDocument(
             `_id`       -> t.appId.value,
-            `runState`  -> BSON.writeDocument(t.runState),
-            `config`    -> BSON.writeDocument(t.config)
+            `runState`  -> t.runState,
+            `config`    -> t.config
           )
 
         override def read(bson: BSONDocument): Instance.Record =
