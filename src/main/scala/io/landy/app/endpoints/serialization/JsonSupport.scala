@@ -137,7 +137,7 @@ trait JsonSupport extends DefaultJsonProtocol with SprayJsonSupport {
 
     def write(event: StartEvent): JsObject =
       JsObject(
-        `type`      -> JsString("start"),
+        `type`      -> JsString(`type:Start`),
         `session`   -> JsString(event.session),
         `timestamp` -> JsNumber(event.timestamp),
         `identity`  -> event.identity.toJson,
@@ -161,7 +161,7 @@ trait JsonSupport extends DefaultJsonProtocol with SprayJsonSupport {
 
     def write(event: PredictEvent): JsObject =
       JsObject(
-        `type`      -> JsString("start"),
+        `type`      -> JsString(`type:Predict`),
         `session`   -> JsString(event.session),
         `timestamp` -> JsNumber(event.timestamp),
         `identity`  -> event.identity.toJson
@@ -182,7 +182,7 @@ trait JsonSupport extends DefaultJsonProtocol with SprayJsonSupport {
     import Event._
 
     def write(event: FinishEvent): JsObject = JsObject(
-      `type`      -> JsString("finish"),
+      `type`      -> JsString(`type:Finish`),
       `session`   -> JsString(event.session),
       `timestamp` -> JsNumber(event.timestamp)
     )

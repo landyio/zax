@@ -176,7 +176,6 @@ class InstanceActor(val appId: Instance.Id) extends ExecutingActor {
       eventsAllStart <-
         ask(storage, Count[StartEvent](
           Event.`appId`     -> appId,
-          Event.`type`      -> Event.`type:Start`,
           Event.`timestamp` -> BSONDocument("$gt" -> from.ts)
         )).mapTo[CountResponse]
           .map(_.count)
@@ -184,7 +183,6 @@ class InstanceActor(val appId: Instance.Id) extends ExecutingActor {
       eventsAllFinish <-
         ask(storage, Count[FinishEvent](
           Event.`appId`     -> appId,
-          Event.`type`      -> Event.`type:Finish`,
           Event.`timestamp` -> BSONDocument("$gt" -> from.ts)
         )).mapTo[CountResponse]
           .map(x => x.count)

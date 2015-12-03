@@ -332,7 +332,6 @@ object Storage extends DefaultBSONHandlers {
         override def write(t: StartEvent): BSONDocument =
           BSONDocument(
             `appId`     -> t.appId,
-            `type`      -> `type:Start`,
             `timestamp` -> t.timestamp,
             `session`   -> t.session,
             `identity`  -> BSON.writeDocument(t.identity),
@@ -359,7 +358,6 @@ object Storage extends DefaultBSONHandlers {
         override def write(t: FinishEvent) =
           BSONDocument(
             `appId`     -> t.appId,
-            `type`      -> `type:Finish`,
             `timestamp` -> t.timestamp,
             `session`   -> t.session
           )

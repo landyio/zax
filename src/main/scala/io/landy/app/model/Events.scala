@@ -10,12 +10,16 @@ sealed trait Event {
 
 object Event {
   val `appId` = "appId"
-  val `type` = "type"
-  val `type:Start` = "start"
-  val `type:Finish` = "finish"
-  val `session` = "session"
+
+  val `type`          = "type"
+  val `type:Start`    = "start"
+  val `type:Finish`   = "finish"
+  val `type:Predict`  = "predict"
+
   val `timestamp` = "timestamp"
-  val `identity` = "identity"
+
+  val `session`   = "session"
+  val `identity`  = "identity"
   val `variation` = "variation"
 }
 
