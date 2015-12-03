@@ -34,13 +34,13 @@ class StorageActor extends ExecutingActor {
 
   import Commands._
 
-  private def trace(f: Future[_], failure: String, args: Any*) = {
+  private def trace(f: Future[_], reason: String, args: Any*) = {
     import Logging.extendLogging
     f.andThen {
       case Success(r: Traceable) =>
         r.trace match { case (t, args) => log.x.debug(t, args:_*) }
       case Failure(t) =>
-        log.x.error(t, failure, args)
+        log.x.error(t, reason, args)
     }
   }
 
@@ -283,9 +283,9 @@ object Storage extends DefaultBSONHandlers {
       }
 
     implicit val variationIdPersister =
-      new BSONReader[BSONObjectID, Variation.Id] with BSONWriter[Variation.Id, BSONObjectID] {
-        override def write(d: Variation.Id): BSONObjectID = BSONObjectID(d.value)
-        override def read(bson: BSONObjectID): Variation.Id = Variation.Id(bson.stringify)
+      new BSONReader[BSONString, Variation.Id] with BSONWriter[Variation.Id, BSONString] {
+        override def write(d: Variation.Id): BSONString = BSONString(d.value)
+        override def read(bson: BSONString): Variation.Id = Variation.Id(bson.value)
       }
 
     implicit val variationPersister =
