@@ -18,7 +18,7 @@ import scala.concurrent.{Await, Future}
 import scala.language.{implicitConversions, postfixOps}
 import scala.util.{Failure, Success}
 
-class InstanceActor(val appId: Instance.Id) extends ExecutingActor {
+class InstanceActor(val appId: Instance.Id, private var config: Instance.Config) extends ExecutingActor {
 
   import Instance._
   import util.State._
@@ -26,6 +26,7 @@ class InstanceActor(val appId: Instance.Id) extends ExecutingActor {
   private val sparkDriverRef = App.actor(classOf[SparkDriverActor].getName)
 
   private var runState: State = State.Loading
+
   private var predictor: Option[Predictor] = None
 
   /**
@@ -109,7 +110,7 @@ class InstanceActor(val appId: Instance.Id) extends ExecutingActor {
 
                 ask[UpdateResponse](this.storage(), Update[Instance.Record](appId) {
                   Instance.Record.`config` ->
-                    getConfig.copy(model = Some(Right(model.asInstanceOf[Instance.Config.RegressionModel])))
+                    config.copy(model = Some(Right(model.asInstanceOf[Instance.Config.RegressionModel])))
                 })
 
                 Some(error)
@@ -131,31 +132,28 @@ class InstanceActor(val appId: Instance.Id) extends ExecutingActor {
     * Explains given sample from the language of the app's model down to the language
     * of the trainer: 'squeezing' features down to corresponding numerical values
     */
-  private def explain(sample: Seq[((UserIdentity, Variation.Id), Goal#Type)]): (Seq[(Seq[Double], Double)], BitSet) =
-    predictor match {
-      case Some(p) =>
+  private def explain(sample: Seq[((UserIdentity, Variation.Id), Goal#Type)]): (Seq[(Seq[Double], Double)], BitSet) = {
+    // Map variations into sequential indices
+    val mapped = config.variations.zipWithIndex
+                                  .map { case (v, idx) => v.id -> idx }
+                                  .toMap
 
-        // Map variations into sequential indices
-        val mapped = getConfig.variations .zipWithIndex
-                                          .map { case (v, idx) => v.id -> idx }
-                                          .toMap
-
-        // Convert sample into user-data-descriptors into numerical 'features'
-        val s = sample.collect {
-          case ((uid, v), goal) if mapped.contains(v) =>
-            (uid.toFeatures(p.config.userDataDescriptors) ++ Seq(mapped(v).toDouble), goal.toDouble)
-        }
-
-        // Designate peculiar features as categorical ones
-        val cats =
-          BitSet(
-            p.config.userDataDescriptors.zipWithIndex
-                                        .filter { case (d, _) => d.categorical }
-                                        .map    { case (_, i) => i } :_*
-          )
-
-        (s, cats + p.config.userDataDescriptors.size /* variation is a category itself */)
+    // Convert sample into user-data-descriptors into numerical 'features'
+    val s = sample.collect {
+      case ((uid, v), goal) if mapped.contains(v) =>
+        (uid.toFeatures(config.userDataDescriptors) ++ Seq(mapped(v).toDouble), goal.toDouble)
     }
+
+    // Designate peculiar features as categorical ones
+    val cats =
+      BitSet(
+        config.userDataDescriptors.zipWithIndex
+                                    .filter { case (d, _) => d.categorical }
+                                    .map    { case (_, i) => i } :_*
+      )
+
+    (s, cats + config.userDataDescriptors.size /* variation is a category itself */)
+  }
 
 
   /**
@@ -191,30 +189,26 @@ class InstanceActor(val appId: Instance.Id) extends ExecutingActor {
   }
 
 
-  // TODO(kudinkin): move config out of predictor
-  private def getConfig: Instance.Config =
-    predictor.collect { case p => p.config } get // getOrElse Instance.Config.sentinel
-
-  private def reloadConfig(): Future[Instance.Record] = {
+  private def reloadConfig(): Future[Instance.Config] = {
     import Storage.Commands.{Load, LoadResponse}
     import Storage.Persisters._
 
-    val f = { for (
-      r <- ask[LoadResponse[Instance.Record]](this.storage(), Load[Instance.Record](appId))
-    ) yield r.seq.collectFirst(Identity.partial()) } map {
-      case Some(c)  => c
-      case None     => throw new Exception(s"Failed to retrieve app's {#${appId.value}} configuration!")
+    {
+      for (
+        r <- ask[LoadResponse[Instance.Record]](this.storage(), Load[Instance.Record](appId))
+      ) yield r.seq.collectFirst(Identity.partial())
     }
-
-    f.andThen {
-      case Success(cfg) => applyConfig(cfg)
-      case Failure(t)   =>
-        log.error(t, s"Failed to retrieve app's {#{}} configuration!", appId)
-    }
+      .andThen {
+        case Success(Some(r)) => updateConfig(r)
+      }
+      .map {
+        case Some(r)  => r.config
+        case None     => throw new Exception(s"Failed to retrieve app's {#${appId.value}} configuration!")
+      }
   }
 
-  private def applyConfig(r: Instance.Record): Unit = {
-    updateState(r.runState) match {
+  private def updateConfig(r: Instance.Record): Unit = {
+    updateFrom(r) match {
       case State.Predicting(_) =>
         predictor = Some(Predictor(r.config))
 
@@ -232,8 +226,10 @@ class InstanceActor(val appId: Instance.Id) extends ExecutingActor {
     }
   }
 
-  private def updateState(state: State): State = {
-    runState = state
+  private def updateFrom(r: Instance.Record): State = {
+    runState  = r.runState
+    config    = r.config
+
     runState
   }
 
@@ -258,7 +254,7 @@ class InstanceActor(val appId: Instance.Id) extends ExecutingActor {
     *
     * @param state target state being switched to
     */
-  private def switchState(state: State): Future[Instance.Record] = {
+  private def switchState(state: State): Future[Instance.Config] = {
     import Storage.Persisters._
 
     ask[UpdateResponse](this.storage(), Update[Instance.Record](appId) {
@@ -326,7 +322,7 @@ class InstanceActor(val appId: Instance.Id) extends ExecutingActor {
     //
 
     case Commands.ReloadConfig() => runState is Any then {
-      reloadConfig() map { r => r.config } pipeTo sender()
+      reloadConfig() pipeTo sender()
     }
 
     case Commands.StatusRequest() => runState is Any then {
@@ -334,7 +330,7 @@ class InstanceActor(val appId: Instance.Id) extends ExecutingActor {
     }
 
     case Commands.ConfigRequest() => runState is Any then {
-      sender ! getConfig
+      sender ! config
     }
 
     case r @ Storage.Commands.StoreRequest(_, _) => runState except State.Suspended then {
@@ -537,16 +533,13 @@ object Instance {
     */
   case class Record(
     appId:    Instance.Id,
-    runState: Instance.State  = Instance.State.NoData,
-    config:   Instance.Config = Instance.Config.empty
+    config:   Instance.Config,
+    runState: Instance.State = Instance.State.NoData
   )
 
   object Record {
     val `config`    = "config"
     val `runState`  = "runState"
-
-    def notFound(appId: Instance.Id) =
-      Record(appId, Instance.State.NoData, Instance.Config.empty)
   }
 
 

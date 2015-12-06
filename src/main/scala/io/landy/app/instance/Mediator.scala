@@ -39,7 +39,10 @@ class MediatorActor extends ExecutingActor {
 
   @inline
   private def forceStartInstance(appId: Instance.Id): ActorRef = context.actorOf(
-    props = Props(classOf[InstanceActor], appId),
+    // Supplied `Instance.Config.empty` is a stub: actor will pre-load
+    // own (proper) config from db upon start-up, or will respond
+    // with failure taking poison-pill
+    props = Props(classOf[InstanceActor], appId, Instance.Config.empty),
     name = Instance.actorName(appId)
   )
 

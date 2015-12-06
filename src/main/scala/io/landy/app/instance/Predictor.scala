@@ -1,6 +1,5 @@
 package io.landy.app.instance
 
-import io.landy.app.instance.Instance.Config
 import io.landy.app.model.{UserDataDescriptor, UserIdentity, Variation}
 import org.apache.spark.mllib.linalg.{Vector, Vectors}
 import org.apache.spark.mllib.tree.model.DecisionTreeModel
@@ -15,10 +14,8 @@ trait Predictor {
 
   import Predictor._
 
-  val config: Instance.Config
-
-  def variations:           Seq[Variation]          = config.variations
-  def userDataDescriptors:  Seq[UserDataDescriptor] = config.userDataDescriptors
+  val variations:   Seq[Variation]
+  val descriptors:  Seq[UserDataDescriptor]
 
   /**
     * Predicts most relevant variation for the user with supplied identity
@@ -91,7 +88,7 @@ trait Classificator extends Predictor {
   val model: ClassificationModel
 
   def predictFor(identity: UserIdentity): Outcome =
-    model.predict(identity.toFeatures(userDataDescriptors)) match {
+    model.predict(identity.toFeatures(descriptors)) match {
       case id => Outcome.Predicted(variations(id))
     }
 
@@ -122,7 +119,7 @@ trait Regressor extends Predictor {
   }
 
   private def probabilityFor(uid: UserIdentity, varId: Int): Double =
-    model.predict(uid.toFeatures(userDataDescriptors) ++ Seq(varId.toDouble))
+    model.predict(uid.toFeatures(descriptors) ++ Seq(varId.toDouble))
 
 }
 
@@ -131,11 +128,12 @@ trait Regressor extends Predictor {
   */
 object Classificator {
   def apply(config: Instance.Config, model: ClassificationModel) =
-    new ClassificatorImpl(config, model)
+    new ClassificatorImpl(config.variations, config.userDataDescriptors, model)
 }
 
-private[instance] class ClassificatorImpl(override val config:  Instance.Config,
-                                          override val model:   ClassificationModel)
+private[instance] class ClassificatorImpl(override val variations:  Seq[Variation],
+                                          override val descriptors: Seq[UserDataDescriptor],
+                                          override val model:       ClassificationModel)
   extends Classificator
 
 
@@ -144,10 +142,11 @@ private[instance] class ClassificatorImpl(override val config:  Instance.Config,
   */
 object Regressor {
   def apply(config: Instance.Config, model: RegressionModel) =
-    new RegressorImpl(config, model)
+    new RegressorImpl(config.variations, config.userDataDescriptors, model)
 }
 
-private[instance] class RegressorImpl(override val config:  Instance.Config,
+private[instance] class RegressorImpl(override val variations:  Seq[Variation],
+                                      override val descriptors: Seq[UserDataDescriptor],
                                       override val model:   RegressionModel)
   extends Regressor
 
@@ -159,14 +158,13 @@ object Random {
 
   def apply(c: Instance.Config) =
     new Predictor {
-      import Predictor._
-
-      override val config: Config = c
+      override val variations:  Seq[Variation]          = c.variations
+      override val descriptors: Seq[UserDataDescriptor] = c.userDataDescriptors
 
       val r = new Random(0xDEADBABE)
 
-      override def predictFor(identity: UserIdentity): Outcome =
-        Outcome.Randomized(c.variations(r.nextInt(c.variations.length)))
+      override def predictFor(identity: UserIdentity): Predictor.Outcome =
+        Predictor.Outcome.Randomized(c.variations(r.nextInt(c.variations.length)))
     }
 }
 
