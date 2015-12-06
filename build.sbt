@@ -59,7 +59,7 @@ libraryDependencies ++= Seq(
 )
 
 libraryDependencies ++= {
-  val ver = "2.3.12"
+  val ver = "2.4.1"
   Seq(
     "com.typesafe.akka"   %%  "akka-actor"     % ver withSources(),
     "com.typesafe.akka"   %%  "akka-testkit"   % ver % "test"
@@ -148,3 +148,8 @@ stopSpark := {
 lazy val runWithSpark = taskKey[Unit]("Runs the app starting Spark's Master instance locally!")
 
 runWithSpark := Def.sequential(runSpark, (run in Compile).toTask(""), stopSpark).value
+
+
+/// Settings //////////////////////////////////////////////////////////////////////////////////////
+
+cancelable in Global := true
