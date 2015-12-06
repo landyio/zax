@@ -1,6 +1,6 @@
 package io.landy.app.model
 
-import io.landy.app.instance.Instance
+import io.landy.app.instance.{Predictor, Instance}
 
 sealed trait Event {
   val appId:    Instance.Id
@@ -55,6 +55,14 @@ object StartEvent {
   object Kind extends Enumeration {
     type Type = Value
     val Predicted, Random = Value
+  }
+
+  def deduceKindBy(o: Predictor.Outcome): Kind.Type = {
+    import Predictor.Outcome._
+    o match {
+      case Predicted(_)   => StartEvent.Kind.Predicted
+      case Randomized(_)  => StartEvent.Kind.Random
+    }
   }
 }
 

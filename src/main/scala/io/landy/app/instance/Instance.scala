@@ -38,7 +38,7 @@ class InstanceActor(val appId: Instance.Id) extends ExecutingActor {
     *
     * @return prediction result (given user-{{{identity}}})
     **/
-  private def predict(identity: UserIdentity): Variation = {
+  private def predict(identity: UserIdentity): Predictor.Outcome = {
     val v = predictor
               .map { p => p.predictFor(identity) }
               .get
@@ -326,7 +326,6 @@ class InstanceActor(val appId: Instance.Id) extends ExecutingActor {
     //
 
     case Commands.ReloadConfig() => runState is Any then {
-      // TODO(kudinkin): that's a hack until `record` & `appconfig` merged
       reloadConfig() map { r => r.config } pipeTo sender()
     }
 
@@ -574,7 +573,7 @@ object Instance {
     val predictTimeout: Timeout = 500.milliseconds
 
     case class PredictRequest(identity: UserIdentity) extends AutoStartMessage[PredictResponse]
-    case class PredictResponse(variation: Variation, state: Instance.State)
+    case class PredictResponse(o: Predictor.Outcome, state: Instance.State)
 
     val trainTimeout: Timeout = 30.seconds
 

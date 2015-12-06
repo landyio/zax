@@ -149,11 +149,11 @@ trait PublicEndpoint extends AppEndpoint {
   import Storage.Persisters._
 
   @inline
-  private[endpoints] def predict(appId: Instance.Id, identity: UserIdentity): Future[(Variation, Instance.State)] = {
+  private[endpoints] def predict(appId: Instance.Id, identity: UserIdentity): Future[(Predictor.Outcome, Instance.State)] = {
     import Instance.Commands.{PredictRequest, PredictResponse, predictTimeout}
 
     askApp[PredictResponse](appId, PredictRequest(identity))(timeout = predictTimeout)
-      .map { r => (r.variation, r.state) }
+      .map { r => (r.o, r.state) }
   }
 
   @inline
@@ -195,17 +195,17 @@ trait PublicEndpoint extends AppEndpoint {
           complete(
             prediction
               .andThen {
-                case Success((v, _)) => storeFor(appId, StartEvent( appId     = appId,
+                case Success((o, s)) => storeFor(appId, StartEvent( appId     = appId,
                                                                     session   = ev.session,
                                                                     timestamp = System.currentTimeMillis(),
                                                                     identity  = identity,
-                                                                    variation = v.id,
-                                                                    kind      = StartEvent.Kind.Predicted))
+                                                                    variation = o.variation.id,
+                                                                    kind      = StartEvent.deduceKindBy(o)))
               }
-              .map { case (v, state) =>
+              .map { case (o, s) =>
                 JsObject(
-                  "variation" -> v.toJson,
-                  "predicted" -> state.isInstanceOf[Instance.State.Predicting].toJson
+                  "variation" -> o.variation.toJson,
+                  "predicted" -> o.isInstanceOf[Predictor.Outcome.Predicted].toJson
                 )
               }
           )

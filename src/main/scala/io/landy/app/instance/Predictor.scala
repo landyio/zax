@@ -1,7 +1,8 @@
 package io.landy.app.instance
 
+import io.landy.app.instance.Instance.Config
 import io.landy.app.model.{UserDataDescriptor, UserIdentity, Variation}
-import org.apache.spark.mllib.linalg.{Vectors, DenseVector, Vector}
+import org.apache.spark.mllib.linalg.{Vector, Vectors}
 import org.apache.spark.mllib.tree.model.DecisionTreeModel
 import org.apache.spark.rdd.RDD
 
@@ -11,6 +12,8 @@ import scala.util.Random
 
 
 trait Predictor {
+
+  import Predictor._
 
   val config: Instance.Config
 
@@ -23,11 +26,25 @@ trait Predictor {
     * @param identity user's identity
     * @return         (presumably) most relevant variation
     */
-  def predictFor(identity: UserIdentity): Variation
+  def predictFor(identity: UserIdentity): Outcome
 
 }
 
 object Predictor {
+
+  /**
+    * Trait representing (atomic) predictor output
+    */
+  trait Outcome {
+    val variation: Variation
+  }
+
+  object Outcome {
+    case class Randomized(variation: Variation) extends Outcome
+    case class Predicted(variation: Variation) extends Outcome
+  }
+
+
   def apply(config: Instance.Config): Predictor = {
     config.model match {
       case Some(Left(m))  => buildClassifier(config, m)
@@ -45,7 +62,7 @@ object Predictor {
     * @return predictor
     **/
   private def buildRandom(config: Instance.Config) =
-    Regressor(config)
+    Random(config)
 
   /**
     * Predictor backed by classifier
@@ -69,11 +86,13 @@ object Predictor {
   */
 trait Classificator extends Predictor {
 
+  import Predictor._
+
   val model: ClassificationModel
 
-  def predictFor(identity: UserIdentity): Variation =
+  def predictFor(identity: UserIdentity): Outcome =
     model.predict(identity.toFeatures(userDataDescriptors)) match {
-      case id => variations(id)
+      case id => Outcome.Predicted(variations(id))
     }
 
 }
@@ -83,24 +102,26 @@ trait Classificator extends Predictor {
   */
 trait Regressor extends Predictor {
 
+  import Predictor._
+
   val model: RegressionModel
 
-  override def predictFor(identity: UserIdentity): Variation = {
+  override def predictFor(identity: UserIdentity): Outcome = {
     val factor: Double = 1e-2
-    def rand(): Double = factor * Random.nextInt() / Int.MaxValue
+    def rand(): Double = factor * scala.util.Random.nextInt() / Int.MaxValue
 
     variations
       .zipWithIndex
       .par
       .toStream
-      .map { case (v, id) => probability(identity, id) -> v }
+      .map { case (v, id) => probabilityFor(identity, id) -> v }
       .map { case (p, v)  => (p + rand()) -> v }
       .sortBy { case (p, _) => -p }
-      .collectFirst { case (_, v) => v }
+      .collectFirst { case (_, v) => Outcome.Predicted(v) }
       .get
   }
 
-  private def probability(uid: UserIdentity, varId: Int): Double =
+  private def probabilityFor(uid: UserIdentity, varId: Int): Double =
     model.predict(uid.toFeatures(userDataDescriptors) ++ Seq(varId.toDouble))
 
 }
@@ -122,10 +143,6 @@ private[instance] class ClassificatorImpl(override val config:  Instance.Config,
   * Regressors
   */
 object Regressor {
-
-  def apply(config: Instance.Config) =
-    new RegressorStub(config)
-
   def apply(config: Instance.Config, model: RegressionModel) =
     new RegressorImpl(config, model)
 }
@@ -134,20 +151,24 @@ private[instance] class RegressorImpl(override val config:  Instance.Config,
                                       override val model:   RegressionModel)
   extends Regressor
 
-private[instance] class RegressorStub(override val config: Instance.Config)
-  extends RegressorImpl(config, RegressionModel.random)
 
+/**
+  * Randomized 'predictor' (guessing variation at random)
+  */
+object Random {
 
-//
-// TODO(kudinkin): Purge
-//
-object RegressionModel {
-  val random: RegressionModel = new RegressionModel {
-    val r = new Random(0xDEADBABE)
-    override def predict(vector: Seq[Double]): Double = r.nextDouble()
-  }
+  def apply(c: Instance.Config) =
+    new Predictor {
+      import Predictor._
+
+      override val config: Config = c
+
+      val r = new Random(0xDEADBABE)
+
+      override def predictFor(identity: UserIdentity): Outcome =
+        Outcome.Randomized(c.variations(r.nextInt(c.variations.length)))
+    }
 }
-
 
 sealed trait RegressionModel {
   def predict(vector: Seq[Double]): Double
