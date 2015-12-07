@@ -4,6 +4,7 @@ import java.io.FileNotFoundException
 
 import akka.actor._
 import akka.io.IO
+import akka.util.Timeout
 import io.landy.app.actors.{ActorTracing, AskSupport, DefaultTimeout}
 import io.landy.app.driver.SparkDriverActor
 import com.typesafe.config.ConfigFactory
@@ -11,6 +12,7 @@ import org.apache.spark.{SparkConf, SparkContext}
 import spray.can.Http
 import spray.can.server.ServerSettings
 
+import scala.concurrent.Await
 import scala.concurrent.duration._
 
 class BootActor extends Actor with ActorTracing
@@ -183,8 +185,13 @@ object App extends DefaultTimeout with AskSupport {
 
   val appActorName = "app"
 
-  def actor(path: ActorPath)(implicit context: ActorContext): ActorRef = context.actorFor(path)
-  def actor(path: String)(implicit context: ActorContext): ActorRef = actor(context.system / appActorName / path)
+  val bootstrapTimeout = Timeout(10.seconds)
+
+  def actor(path: ActorPath)(implicit context: ActorContext): ActorRef =
+    Await.result(context.actorSelection(path).resolveOne()(bootstrapTimeout), bootstrapTimeout.duration)
+
+  def actor(path: String)(implicit context: ActorContext): ActorRef =
+    actor(context.system / appActorName / path)
 
   object Commands {
     case class Startup()
@@ -197,6 +204,7 @@ object App extends DefaultTimeout with AskSupport {
 
   def main(args: Array[String]): Unit = {
     val bootRef: ActorRef = system.actorOf(Props[BootActor], name = appActorName)
+
     system.registerOnTermination { bootRef ! Commands.Shutdown() }
 
     import scala.concurrent.Await
