@@ -72,8 +72,8 @@ class InstanceActor(val appId: Instance.Id, private var config: Instance.Config)
     // TODO(kudinkin): We need some policy over here
     //
 
-    val MINIMAL_POSITIVE_OUTCOMES_NO  = 1   /* 25 */
-    val MINIMAL_SAMPLE_SIZE           = 10  /* 100 */
+    val MINIMAL_POSITIVE_OUTCOMES_NO  = 20
+    val MINIMAL_SAMPLE_SIZE           = 50
 
     val eligible = s.eventsAllFinish >= MINIMAL_POSITIVE_OUTCOMES_NO && s.eventsAllStart >= MINIMAL_SAMPLE_SIZE
 
