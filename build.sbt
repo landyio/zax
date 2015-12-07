@@ -45,6 +45,16 @@ dockerBaseImage := "java:8"
 
 dockerExposedPorts := Seq(8080, 8081)
 
+dockerCommands :=
+  dockerCommands.value.filterNot {
+    case Cmd("USER", _) => true
+    case _ => false
+  } ++ Seq(
+    ExecCmd ("RUN", "mkdir", "-p",                  s"/var/log/${name.value}"),
+    ExecCmd ("RUN", "chown", "-R", "daemon:daemon", s"/var/log/${name.value}"),
+    Cmd     ("USER", "daemon")
+  )
+
 
 /// Resolvers /////////////////////////////////////////////////////////////////////////////////////
 
@@ -99,6 +109,13 @@ libraryDependencies ++= {
     // TODO(kudinkin): replaced as unmanaged-dep until 0.11.* version lands
     //
     // "org.scala-lang.modules" %% "scala-pickling" % "0.10.3-SNAPSHOT" withSources(),
+  )
+}
+
+libraryDependencies ++= {
+  Seq(
+    "com.typesafe.akka" %% "akka-slf4j"       % "2.4.1",
+    "ch.qos.logback"    %  "logback-classic"   % "1.1.3"
   )
 }
 
