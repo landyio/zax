@@ -140,10 +140,10 @@ trait PublicEndpoint extends AppEndpoint {
     * Greps additional info about environment
     */
   private def mapAdditionalInfo(ip: RemoteAddress, userTs: Long): Map[String, String] = {
-    Map {
-      "ip"      -> ip.toOption.map { case ip => ip.getHostAddress }.getOrElse("0.0.0.0")
+    Map(
+      "ip"      -> ip.toOption.map { case ip => ip.getHostAddress }.getOrElse("0.0.0.0"),
       "userTs"  -> userTs.toString
-    }
+    )
   }
 
   import Storage.Persisters._
