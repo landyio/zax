@@ -68,10 +68,10 @@ class BootActor extends Actor with ActorTracing
         case fnf: FileNotFoundException => log.error(fnf, "KeyStore not found!")
       }
 
-      val keyManagerFactory = KeyManagerFactory.getInstance("SunX509")
+      val keyManagerFactory = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm)
       keyManagerFactory.init(keyStore, password.toCharArray)
 
-      val trustManagerFactory = TrustManagerFactory.getInstance("SunX509")
+      val trustManagerFactory = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm)
       trustManagerFactory.init(keyStore)
 
       val context = SSLContext.getInstance("TLS")
@@ -84,7 +84,7 @@ class BootActor extends Actor with ActorTracing
 
     implicit lazy val engineProvider = ServerSSLEngineProvider {
       engine => {
-        engine.setEnabledProtocols    (Array("SSLv3", "TLSv1"))
+        engine.setEnabledProtocols    (Array("SSLv3", "TLSv1", "TLSv1.1", "TLSv1.2"))
         engine
       }
     }

@@ -3,6 +3,10 @@ var http  = require('http');
 var https = require('https');
 
 
+// Since certificate is bound to `zax.landy.io`, just 
+// ignore it and allow unauthorized access
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
+
 function request(host, method, path, port, data, succCallback, useHttps, verbose) {
 
   var options = {
