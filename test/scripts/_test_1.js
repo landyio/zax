@@ -5,6 +5,11 @@ var gen = require('./gen.js');
 var sleep = require('sleep')
 
 
+var publicPort  = '8080';
+var privatePort = '8090';
+
+var https = publicPort === '8081';
+
 var host = 'localhost' // '192.168.99.100'
 
 function submit(session, ts, visitor, vars, targetVar, appId) {
@@ -15,7 +20,6 @@ function submit(session, ts, visitor, vars, targetVar, appId) {
   // #2
   // 
 
-  var port = '8080';
   var verbose = true;
 
   var vid = gen.randomInt(vars.length);
@@ -28,7 +32,7 @@ function submit(session, ts, visitor, vars, targetVar, appId) {
   };
 
 
-  var ps = http.post(host, '/app/' + appId + '/event/start', port, start, verbose);
+  var ps = http.post(host, '/app/' + appId + '/event/start', publicPort, start, https, verbose);
 
   if (vid === targetVar) 
   {
@@ -37,7 +41,7 @@ function submit(session, ts, visitor, vars, targetVar, appId) {
       timestamp:  ts
     };
 
-    var pf = http.post(host, '/app/' + appId + '/event/finish', port, finish, verbose);
+    var pf = http.post(host, '/app/' + appId + '/event/finish', publicPort, finish, https, verbose);
 
     return Promise.all([ ps, pf ]);
   }
@@ -47,6 +51,8 @@ function submit(session, ts, visitor, vars, targetVar, appId) {
 
 (function main() {
   'use strict';
+
+
 
   // Step #0: Sweep
   
@@ -72,7 +78,7 @@ function submit(session, ts, visitor, vars, targetVar, appId) {
         { name: "lang",    categorical: true } ]
     }
 
-    return http.post(host, '/app/' + appId + '/control/create', '8081', appconf, true);
+    return http.post(host, '/app/' + appId + '/control/create', privatePort, appconf, /* https = */ false, /* verbose = */ true);
 
   }
 
@@ -96,7 +102,7 @@ function submit(session, ts, visitor, vars, targetVar, appId) {
     lang:     [ 5, 5, 7, 60 ]
   }
     
-  var N = 500;
+  var N = 5;
   var M = 1;
 
   
@@ -149,7 +155,7 @@ function submit(session, ts, visitor, vars, targetVar, appId) {
     testSample.forEach(function (visitor) {
 
       ps.push(
-        http.post(host, '/app/' + appId + '/event/predict', '8080', { identity: visitor }, true /* verbose */)
+        http.post(host, '/app/' + appId + '/event/predict', publicPort, { identity: visitor }, https, true /* verbose */)
       );
 
     });

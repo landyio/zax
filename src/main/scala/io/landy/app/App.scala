@@ -75,6 +75,7 @@ class BootActor extends Actor with ActorTracing
       trustManagerFactory.init(keyStore)
 
       val context = SSLContext.getInstance("TLS")
+
       context.init(keyManagerFactory.getKeyManagers, trustManagerFactory.getTrustManagers, new SecureRandom)
       context
     }
@@ -83,7 +84,7 @@ class BootActor extends Actor with ActorTracing
 
     implicit lazy val engineProvider = ServerSSLEngineProvider {
       engine => {
-        // engine.setEnabledProtocols(Array("SSLv3", "TLSv1"))
+        engine.setEnabledProtocols    (Array("SSLv3", "TLSv1"))
         engine
       }
     }
@@ -94,14 +95,24 @@ class BootActor extends Actor with ActorTracing
 
     val conf = ConfigFactory.load()
 
-    val privateHost: String = conf.getString("landy.server.private.host")
-    val privatePort: Int = conf.getInt("landy.server.private.port")
+    val privateEndpoint = new {
+      val http = new {
+        val host = conf.getString ("landy.server.private.http.host")
+        val port = conf.getInt    ("landy.server.private.http.port")
+      }
+    }
 
-    val publicHost: String = conf.getString("landy.server.public.host")
-    val publicPort: Int = conf.getInt("landy.server.public.port")
+    val publicEndpoint = new {
+      val http = new {
+        val host = conf.getString ("landy.server.public.http.host")
+        val port = conf.getInt    ("landy.server.public.http.port")
+      }
 
-    val privateHttps: Boolean = conf.getBoolean("landy.server.private.https")
-    val publicHttps: Boolean = conf.getBoolean("landy.server.public.https")
+      val https = new {
+        val host = conf.getString ("landy.server.public.https.host")
+        val port = conf.getInt    ("landy.server.public.https.port")
+      }
+    }
 
     import io.landy.app.endpoints._
 
@@ -115,30 +126,57 @@ class BootActor extends Actor with ActorTracing
       name  = classOf[PublicEndpointActor].getName
     )
 
+
     implicit val system: ActorSystem = context.system
 
     import spray.can.server.ServerSettings
+
     val settingsHttp = ServerSettings(system).copy(
-      remoteAddressHeader = true, // this is required for client-ip resolution
-      sslEncryption = false // no-ssl
+      // NOTA BENE:
+      //  This is required for client-ip resolution
+      remoteAddressHeader = true,
+      sslEncryption = false
     )
 
     val settingsHttps = settingsHttp.copy(
-      sslEncryption = true // have-ssl
+      sslEncryption = true
     )
 
     import spray.can.Http
 
     //
-    // Private
+    // Private endpoint:
+    //    > http
     //
-    IO(Http) ? bind(privateHost, privatePort, privateRef, if (privateHttps) settingsHttps else settingsHttp, privateHttps)
+    IO(Http) ? bind(
+      privateEndpoint.http.host,
+      privateEndpoint.http.port,
+      privateRef,
+      settingsHttp,
+      useHttps = false
+    )
 
 
     //
-    // Public
+    // Public endpoint(s):
+    //    > http
+    //    > https
     //
-    IO(Http) ? bind(publicHost, publicPort, publicRef, if (publicHttps) settingsHttps else settingsHttp, publicHttps)
+    IO(Http) ? bind(
+      publicEndpoint.http.host,
+      publicEndpoint.http.port,
+      publicRef,
+      settingsHttp,
+      useHttps = false
+    )
+
+    IO(Http) ? bind(
+      publicEndpoint.https.host,
+      publicEndpoint.https.port,
+      publicRef,
+      settingsHttps,
+      useHttps = true
+    )
   }
 
   def startSpark() {

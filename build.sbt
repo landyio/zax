@@ -43,7 +43,7 @@ defaultLinuxInstallLocation in Docker := "/opt/docker/"
 
 dockerBaseImage := "java:8"
 
-dockerExposedPorts := Seq(8080, 8081)
+dockerExposedPorts := Seq(8080, 8081, 8090)
 
 dockerCommands :=
   dockerCommands.value.filterNot {
