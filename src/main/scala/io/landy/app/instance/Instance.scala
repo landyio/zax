@@ -100,7 +100,7 @@ class InstanceActor(val appId: Instance.Id, private var config: Instance.Config)
             .flatMap { sample =>
               ask[TrainRegressorResponse](
                 sparkDriverRef,
-                explain(sample) match { case (s, cats) => TrainRegressor(s, cats) }
+                explain(sample) match { case (s, cats) => TrainRegressor(SparkDriverActor.Models.DecisionTree, s, cats) }
               )(executionContext, Commands.trainTimeout)
             }
             .map {

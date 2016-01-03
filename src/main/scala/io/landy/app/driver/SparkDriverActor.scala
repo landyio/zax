@@ -3,11 +3,11 @@ package io.landy.app.driver
 import akka.pattern.pipe
 import io.landy.app.actors.ExecutingActor
 import io.landy.app.instance._
-import io.landy.app.driver.SparkDriverActor.Commands.{TrainClassifierResponse, TrainRegressorResponse}
 import org.apache.spark.SparkContext
 import org.apache.spark.mllib.linalg.{DenseVector, Vectors}
 import org.apache.spark.mllib.regression.LabeledPoint
-import org.apache.spark.mllib.tree.DecisionTree
+import org.apache.spark.mllib.tree.model.{DecisionTreeModel, RandomForestModel}
+import org.apache.spark.mllib.tree.{DecisionTree, RandomForest}
 import org.apache.spark.rdd.RDD
 
 import scala.collection.generic.CanBuildFrom
@@ -17,8 +17,6 @@ import scala.concurrent.Future
 import scala.language.{higherKinds, reflectiveCalls}
 
 class SparkDriverActor(private val sc: SparkContext) extends ExecutingActor {
-
-  import SparkDriverActor._
 
   def convert(sample: Seq[(Seq[Double], Double)]): RDD[LabeledPoint] = {
     sc.parallelize(
@@ -35,7 +33,7 @@ class SparkDriverActor(private val sc: SparkContext) extends ExecutingActor {
             .toDouble / testSet.count()
   }
 
-  private val TRAIN_TEST_SET_RATIO = 0.8
+  private val SPLIT_RATIO = 0.8
 
   private def merge[K, V, S[X] <: Set[X]](one: Map[K, S[V]], other: Map[K, S[V]])(implicit cbf: CanBuildFrom[Nothing, V, S[V]]): Map[K, S[V]] =
     one.foldLeft(other) {
@@ -43,7 +41,7 @@ class SparkDriverActor(private val sc: SparkContext) extends ExecutingActor {
     }
 
   def split[T <: RDD[_]](dataSet: T) =
-    dataSet.randomSplit(Array(TRAIN_TEST_SET_RATIO, 1 - TRAIN_TEST_SET_RATIO)) match {
+    dataSet.randomSplit(Array(SPLIT_RATIO, 1 - SPLIT_RATIO)) match {
       case Array(a: T, b: T) => (a, b)
     }
 
@@ -94,7 +92,7 @@ class SparkDriverActor(private val sc: SparkContext) extends ExecutingActor {
   /**
     * Prepares sample prior to training to extract info about categories of values
     * and remap every sample point into {0..N} space where N -- is the amount of
-    * values in category for a particlar feature
+    * values in category for a particular feature
     *
     * @param sample sample to be converted
     * @param categorical bit-set demarking categorical features
@@ -116,38 +114,128 @@ class SparkDriverActor(private val sc: SparkContext) extends ExecutingActor {
     (categories, mapping, remapped)
   }
 
-  private def trainClassifier(sample: Seq[(Seq[Double], Double)], categorical: BitSet): Future[TrainClassifierResponse] = {
-    // TODO(kudinkin): Extract
+  /**
+    * Abstract facade incorporating settings to fit model of particular type @T
+    *
+    * @tparam T type of the model to be fit with
+    */
+  trait Fitter[+T <: SparkModel.Model] {
+    def apply(sample: RDD[LabeledPoint], categoricalFeaturesInfo: Map[Int, Int]): T
+  }
 
-    val maxBins     = 32
-    val maxDepth    = 10
-    val impurity    = "gini"
-    val numClasses  = 2
+  trait ClassifierFitter  [+T <: SparkModel.Model] extends Fitter[T]
+  trait RegressorFitter   [+T <: SparkModel.Model] extends Fitter[T]
+
+  /**
+    * See @DecisionTree.trainClassifier for details
+    */
+  case class DecisionTreeClassifierFitter(
+    numClasses: Int,
+    maxBins:    Int,
+    maxDepth:   Int,
+    impurity:   String
+  ) extends ClassifierFitter[DecisionTreeModel] {
+
+    override def apply(sample: RDD[LabeledPoint], categoricalFeatures: Map[Int, Int]): DecisionTreeModel =
+      DecisionTree.trainClassifier(sample, numClasses, categoricalFeatures, impurity, maxDepth, maxBins)
+
+  }
+
+  /**
+    * See @DecisionTree.trainClassifier for details
+    */
+  case class RandomForestClassifierFitter(
+    numClasses:             Int,
+    numTrees:               Int,
+    featureSubsetStrategy:  String,
+    impurity:               String,
+    maxBins:                Int,
+    maxDepth:               Int
+  ) extends ClassifierFitter[RandomForestModel] {
+
+    override def apply(sample: RDD[LabeledPoint], categoricalFeatures: Map[Int, Int]): RandomForestModel =
+      RandomForest.trainClassifier(sample, numClasses, categoricalFeatures, numTrees, featureSubsetStrategy, impurity, maxDepth, maxBins)
+
+  }
+
+  /**
+    * See @DecisionTree.trainRegressor for details
+    */
+  case class DecisionTreeRegressorFitter(
+    maxBins:    Int,
+    maxDepth:   Int,
+    impurity:   String
+  ) extends RegressorFitter[DecisionTreeModel] {
+
+    override def apply(sample: RDD[LabeledPoint], categoricalFeatures: Map[Int, Int]): DecisionTreeModel =
+      DecisionTree.trainRegressor(sample, categoricalFeatures, impurity, maxDepth, maxBins)
+
+  }
+
+  /**
+    * See @DecisionTree.trainRegressor for details
+    */
+  case class RandomForestRegressorFitter(
+    numTrees:               Int,
+    featureSubsetStrategy:  String,
+    impurity:               String,
+    maxBins:                Int,
+    maxDepth:               Int
+  ) extends RegressorFitter[RandomForestModel] {
+
+    override def apply(sample: RDD[LabeledPoint], categoricalFeatures: Map[Int, Int]): RandomForestModel =
+      RandomForest.trainRegressor(sample, categoricalFeatures, numTrees, featureSubsetStrategy, impurity, maxDepth, maxBins)
+
+  }
+
+
+  /**
+    * Fits classifier of particular type to the sample supplied
+    *
+    * @param sample       target sample to be fit to (and also cross-validate)
+    * @param categorical  set containing indexes of the categorical features
+    * @param fitter       particular fitting procedure
+    * @tparam T           target model to be fit
+    * @return             model fit, mapping of features, cross-validation error
+    */
+  private def fitClassifier[T <: SparkModel.Model](
+    sample: Seq[(Seq[Double], Double)],
+    categorical: BitSet,
+    fitter: ClassifierFitter[T]
+  ): (T, SparkModel.Mapping, Double) = {
 
     val (categories, mapping, remapped) = prepare(sample, categorical)
-    val (train, test)                   = split(remapped)
+    val (training, test)                = split(remapped)
 
-    val model = DecisionTree.trainClassifier(train, numClasses, squash(categories), impurity, maxDepth, maxBins)
+    val model = fitter(training, squash(categories))
 
     val error = evaluate(model, test)
 
-    Future { Commands.TrainClassifierResponse(new SparkDecisionTreeClassificationModel(model, mapping), error) }
+    (model, mapping, error)
   }
 
-  def trainRegressor(sample: Seq[(Seq[Double], Double)], categorical: BitSet): Future[TrainRegressorResponse] = {
 
-    // TODO(kudinkin): Extract
+  /**
+    * Fits regressor of particular type to the sample supplied
+    *
+    * @param sample       target sample to be fit to (and also cross-validate)
+    * @param categorical  set containing indexes of the categorical features
+    * @param fitter       particular fitting procedure
+    * @tparam T           target model to be fit
+    * @return             model fit, mapping of features, cross-validation error
+    */
+  def fitRegressor[T <: SparkModel.Model](
+    sample: Seq[(Seq[Double], Double)],
+    categorical: BitSet,
+    fitter: RegressorFitter[T]
+  ): (T, SparkModel.Mapping, Double) = {
 
     log.info("Training regressor with sample total of {} elements", sample.size)
 
-    val maxBins     = 32
-    val maxDepth    = 16
-    val impurity    = "variance"
-
     val (categories, mapping, remapped) = prepare(sample, categorical)
-    val (train, test)                   = split(remapped)
+    val (training, test)                = split(remapped)
 
-    val model = DecisionTree.trainRegressor(train, squash(categories), impurity, maxDepth, maxBins)
+    val model = fitter(training, squash(categories))
 
     val error = evaluate(model, test)
 
@@ -156,34 +244,109 @@ class SparkDriverActor(private val sc: SparkContext) extends ExecutingActor {
              s"Categories: {}                 \n" +
              s"Error:      {}                 \n", model, sample.size, categories, error)
 
-    Future { TrainRegressorResponse(new SparkDecisionTreeRegressionModel(model, mapping), error) }
+    (model, mapping, error)
   }
 
+
+  import SparkDriverActor._
+
   override def receive: Receive = trace {
-    case Commands.TrainClassifier(sample, categories) => trainClassifier(sample, categories) pipeTo sender()
-    case Commands.TrainRegressor(sample, categories)  => trainRegressor(sample, categories) pipeTo sender()
+
+    // Trains classifier (of particular model-type) given the sample and
+    // categorical features info
+    case Commands.TrainClassifier(model, sample, categoricalFeatures) =>
+      model match {
+        case Models.DecisionTree =>
+          val (model, mapping, error) =
+            fitClassifier(sample, categoricalFeatures,
+              DecisionTreeClassifierFitter(
+                numClasses  = 2,
+                maxBins     = 32,
+                maxDepth    = 10,
+                impurity    = "gini"
+              )
+            )
+
+          Future { Commands.TrainClassifierResponse(new SparkDecisionTreeClassificationModel(model, mapping), error) } pipeTo sender()
+
+        case Models.RandomForest =>
+          val (model, mapping, error) =
+            fitClassifier(sample, categoricalFeatures,
+              RandomForestClassifierFitter(
+                numClasses            = 2,
+                numTrees              = 3,
+                featureSubsetStrategy = "auto",
+                maxBins               = 32,
+                maxDepth              = 10,
+                impurity              = "gini"
+              )
+            )
+
+          Future { Commands.TrainClassifierResponse(new SparkRandomForestClassificationModel(model, mapping), error) } pipeTo sender()
+
+      }
+
+    // Trains regressor (of particular model-type) given the sample and
+    // categorical features info
+    case Commands.TrainRegressor(model, sample, categoricalFeatures) =>
+      model match {
+        case Models.DecisionTree =>
+          val (model, mapping, error) =
+            fitRegressor(sample, categoricalFeatures,
+              DecisionTreeRegressorFitter(
+                maxBins     = 32,
+                maxDepth    = 16,
+                impurity    = "variance"
+              )
+            )
+
+          Future { Commands.TrainRegressorResponse(new SparkDecisionTreeRegressionModel(model, mapping), error) } pipeTo sender()
+
+        case Models.RandomForest =>
+          val (model, mapping, error) =
+            fitRegressor(sample, categoricalFeatures,
+              RandomForestRegressorFitter(
+                numTrees              = 3,
+                featureSubsetStrategy = "auto",
+                maxBins               = 32,
+                maxDepth              = 16,
+                impurity              = "variance"
+              )
+            )
+
+          Future { Commands.TrainRegressorResponse(new SparkRandomForestRegressionModel(model, mapping), error) } pipeTo sender()
+      }
+
   }
 
 }
 
 object SparkDriverActor {
 
+  /**
+    * Target models driver is capable to fit to sample supplied
+    */
+  object Models extends Enumeration {
+    type Type = Value
+    val DecisionTree, RandomForest = Value
+  }
+
   object Commands {
 
     /**
       * Request for training classifier on particular sample
       *
-      * @param sample   sample to train classifier on
+      * @param sample sample to train classifier on
       */
-    case class TrainClassifier(sample: Seq[(Seq[Double], Double)], categories: BitSet)
+    case class TrainClassifier(m: Models.Type, sample: Seq[(Seq[Double], Double)], categoricalFeatures: BitSet)
     case class TrainClassifierResponse(model: ClassificationModel, error: Double)
 
     /**
       * Request for training regressor on particular sample
       *
-      * @param sample   sample to train regressor on
+      * @param sample sample to train regressor on
       */
-    case class TrainRegressor(sample: Seq[(Seq[Double], Double)], categories: BitSet)
+    case class TrainRegressor(m: Models.Type, sample: Seq[(Seq[Double], Double)], categoricalFeatures: BitSet)
     case class TrainRegressorResponse(model: RegressionModel, error: Double)
 
   }

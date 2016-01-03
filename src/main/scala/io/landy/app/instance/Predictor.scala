@@ -2,7 +2,7 @@ package io.landy.app.instance
 
 import io.landy.app.model.{UserDataDescriptor, UserIdentity, Variation}
 import org.apache.spark.mllib.linalg.{Vector, Vectors}
-import org.apache.spark.mllib.tree.model.DecisionTreeModel
+import org.apache.spark.mllib.tree.model.{RandomForestModel, DecisionTreeModel}
 import org.apache.spark.rdd.RDD
 
 import scala.language.reflectiveCalls
@@ -192,7 +192,12 @@ sealed trait SparkModel[+T <: SparkModel.Model] {
     )
 }
 
-@directSubclasses(Array(classOf[SparkDecisionTreeRegressionModel], classOf[SparkDecisionTreeClassificationModel]))
+@directSubclasses(
+  Array(
+    classOf[SparkDecisionTreeRegressionModel], classOf[SparkDecisionTreeClassificationModel],
+    classOf[SparkRandomForestRegressionModel], classOf[SparkRandomForestClassificationModel]
+  )
+)
 sealed trait PickleableModel
 
 object SparkModel {
@@ -223,8 +228,24 @@ class SparkRegressionModel[+T <: SparkModel.Model](
 
 }
 
+/**
+  * Spark's MLLib _regression_ decision-tree-model facade
+  *
+  * @param model    target decision-tree-model
+  * @param mapping  see @SparkRegressionModel for details
+  */
 final case class SparkDecisionTreeRegressionModel(override val model: DecisionTreeModel, override val mapping: SparkModel.Mapping)
   extends SparkRegressionModel[DecisionTreeModel](model, mapping)
+  with    PickleableModel
+
+/**
+  * Spark's MLLib _regression_ random-forest-model facade
+  *
+  * @param model    target random-forest-model
+  * @param mapping  see @SparkRegressionModel for details
+  */
+final case class SparkRandomForestRegressionModel(override val model: RandomForestModel, override val mapping: SparkModel.Mapping)
+  extends SparkRegressionModel[RandomForestModel](model, mapping)
   with    PickleableModel
 
 
@@ -238,9 +259,23 @@ class SparkClassificationModel[+T <: SparkModel.Model](
 
 }
 
-final case class SparkDecisionTreeClassificationModel(
-  override val model: DecisionTreeModel,
-  override val mapping: SparkModel.Mapping
-) extends SparkClassificationModel[DecisionTreeModel](model, mapping)
+/**
+  * Spark's MLLib _classification_ decision-tree-model facade
+  *
+  * @param model    target decision-tree-model
+  * @param mapping  see @SparkRegressionModel for details
+  */
+final case class SparkDecisionTreeClassificationModel(override val model: DecisionTreeModel, override val mapping: SparkModel.Mapping)
+  extends SparkClassificationModel[DecisionTreeModel](model, mapping)
+  with    PickleableModel
+
+/**
+  * Spark's MLLib _classification_ random-forest-model facade
+  *
+  * @param model    target random-forest-model
+  * @param mapping  see @SparkRegressionModel for details
+  */
+final case class SparkRandomForestClassificationModel(override val model: RandomForestModel, override val mapping: SparkModel.Mapping)
+  extends SparkClassificationModel[RandomForestModel](model, mapping)
   with    PickleableModel
 
