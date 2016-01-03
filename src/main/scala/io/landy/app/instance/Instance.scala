@@ -7,6 +7,7 @@ import io.landy.app.App
 import io.landy.app.actors.ExecutingActor
 import io.landy.app.driver.SparkDriverActor
 import io.landy.app.instance.Instance.State.Suspended
+import io.landy.app.ml.{Models, SparkRegressionModel, SparkModel, SparkClassificationModel}
 import io.landy.app.model._
 import io.landy.app.storage.Storage
 import io.landy.app.storage.Storage.Commands.{Update, UpdateResponse}
@@ -100,7 +101,7 @@ class InstanceActor(val appId: Instance.Id, private var config: Instance.Config)
             .flatMap { sample =>
               ask[TrainRegressorResponse](
                 sparkDriverRef,
-                explain(sample) match { case (s, cats) => TrainRegressor(SparkDriverActor.Models.DecisionTree, s, cats) }
+                explain(sample) match { case (s, cats) => TrainRegressor(Models.Types.DecisionTree, s, cats) }
               )(executionContext, Commands.trainTimeout)
             }
             .map {

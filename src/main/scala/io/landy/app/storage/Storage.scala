@@ -5,6 +5,7 @@ import com.typesafe.config.{Config, ConfigFactory}
 import io.landy.app.actors.ExecutingActor
 import io.landy.app.instance.Instance.{Id, State}
 import io.landy.app.instance._
+import io.landy.app.ml._
 import io.landy.app.model._
 import io.landy.app.util.Logging
 import org.apache.commons.lang.StringUtils
@@ -12,6 +13,7 @@ import reactivemongo.bson.DefaultBSONHandlers
 
 import scala.concurrent.Future
 import scala.pickling.Unpickler
+import scala.pickling.json._
 import scala.util.{Failure, Success}
 
 import scala.language.implicitConversions
@@ -376,109 +378,24 @@ object Storage extends DefaultBSONHandlers {
 
     object Model {
 
-      //
-      // NOTA BENE
-      //    That's inevitable evil: `pickling` can't live with enums (even Scala's ones)
-      //
-      //    https://github.com/scala/pickling/issues/17
-      //
-
-      import scala.pickling.pickler._
-
-      object Picklers extends PrimitivePicklers {
-
-        abstract class AbstractPicklerUnpickler[T]() extends scala.AnyRef with scala.pickling.Pickler[T] with scala.pickling.Unpickler[T] {
-          import scala.pickling.{PBuilder, Pickler}
-
-          def putInto[F](field: F, builder: PBuilder)(implicit pickler: Pickler[F]): Unit = {
-            pickler.pickle(field, builder)
-          }
-        }
-
-        import org.apache.spark.mllib.tree.configuration.{Algo, FeatureType}
-
-        implicit val algoPickler = new AbstractPicklerUnpickler[Algo.Algo] {
-          import scala.pickling.{FastTypeTag, PBuilder, PReader}
-
-          override def tag = FastTypeTag[Algo.Algo]
-
-          override def pickle(picklee: Algo.Algo, builder: PBuilder): Unit = {
-            builder.beginEntry(picklee, tag)
-
-            builder.putField("algo", { fb =>
-              putInto(picklee match {
-                case Algo.Classification  => "classification"
-                case Algo.Regression      => "regression"
-              }, fb)
-            })
-
-            builder.endEntry()
-          }
-
-          override def unpickle(tag: String, reader: PReader): Any = {
-            stringPickler.unpickleEntry(reader.readField("algo")).asInstanceOf[String] match {
-              case "classification" => Algo.Classification
-              case "regression"     => Algo.Regression
-            }
-          }
-        }
-
-        implicit val featureTypePickler = new AbstractPicklerUnpickler[FeatureType.FeatureType] {
-          import scala.pickling.{FastTypeTag, PBuilder, PReader}
-
-          override def tag = FastTypeTag[FeatureType.FeatureType]
-
-          override def pickle(picklee: FeatureType.FeatureType, builder: PBuilder): Unit = {
-            builder.beginEntry(picklee, tag)
-
-            builder.putField("featureType", { fb =>
-              putInto(picklee match {
-                case FeatureType.Categorical  => "categorical"
-                case FeatureType.Continuous   => "continuous"
-              }, fb)
-            })
-
-            builder.endEntry()
-          }
-
-          override def unpickle(tag: String, reader: PReader): Any = {
-            stringPickler.unpickleEntry(reader.readField("featureType")).asInstanceOf[String] match {
-              case "categorical"  => FeatureType.Categorical
-              case "continuous"   => FeatureType.Continuous
-            }
-          }
-        }
-      }
-
-      import scala.pickling.Defaults._
-      import scala.pickling.Pickler
-
-      import Picklers.{algoPickler, featureTypePickler}
-
-      implicit val cmp = Pickler.generate[SparkDecisionTreeClassificationModel]
-      implicit val rmp = Pickler.generate[SparkDecisionTreeRegressionModel]
-
-      implicit val pu = Unpickler.generate[PickleableModel]
-
       implicit val binaryPersister =
         new BSONReader[BSONBinary, Instance.Config.Model] with BSONWriter[Instance.Config.Model, BSONBinary] {
 
-          import scala.pickling.Defaults._
           import scala.pickling.binary._
 
           override def write(model: Instance.Config.Model): BSONBinary =
             BSONBinary(
               model match {
-                case Left(e)  => e.asInstanceOf[SparkDecisionTreeClassificationModel].pickle.value
-                case Right(e) => e.asInstanceOf[SparkDecisionTreeRegressionModel].pickle.value
+                case Left(e)  => Models.Picklers.pickle(e.asInstanceOf[PickleableModel]).value
+                case Right(e) => Models.Picklers.pickle(e.asInstanceOf[PickleableModel]).value
               },
               Subtype.UserDefinedSubtype
             )
 
           override def read(bson: BSONBinary): Instance.Config.Model =
-            bson.byteArray.unpickle[PickleableModel] match {
-              case c @ SparkDecisionTreeClassificationModel(_, _) => Left(c)
-              case r @ SparkDecisionTreeRegressionModel(_, _)     => Right(r)
+            Models.Picklers.unpickle(bson.byteArray) match {
+              case c: SparkClassificationModel  [SparkModel.Model] => Left(c)
+              case r: SparkRegressionModel      [SparkModel.Model] => Right(r)
               case x =>
                 throw new UnsupportedOperationException()
             }
@@ -487,21 +404,20 @@ object Storage extends DefaultBSONHandlers {
       implicit val jsonPersister =
           new BSONReader[BSONString, Instance.Config.Model] with BSONWriter[Instance.Config.Model, BSONString] {
 
-          import scala.pickling.Defaults._
           import scala.pickling.json._
 
           override def write(model: Instance.Config.Model): BSONString =
             BSONString(
               model match {
-                case Left(e)  => e.asInstanceOf[SparkDecisionTreeClassificationModel].pickle.value
-                case Right(e) => e.asInstanceOf[SparkDecisionTreeRegressionModel].pickle.value
+                case Left(e)  => Models.Picklers.pickle(e.asInstanceOf[PickleableModel]).value
+                case Right(e) => Models.Picklers.pickle(e.asInstanceOf[PickleableModel]).value
               }
             )
 
           override def read(bson: BSONString): Instance.Config.Model =
-            bson.value.unpickle[PickleableModel] match {
-              case c @ SparkDecisionTreeClassificationModel(_, _) => Left(c)
-              case r @ SparkDecisionTreeRegressionModel(_, _)     => Right(r)
+            Models.Picklers.unpickle(bson.value) match {
+              case c: SparkClassificationModel  [SparkModel.Model] => Left(c)
+              case r: SparkRegressionModel      [SparkModel.Model] => Right(r)
               case x =>
                 throw new UnsupportedOperationException()
             }

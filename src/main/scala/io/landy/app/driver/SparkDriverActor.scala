@@ -3,6 +3,7 @@ package io.landy.app.driver
 import akka.pattern.pipe
 import io.landy.app.actors.ExecutingActor
 import io.landy.app.instance._
+import io.landy.app.ml._
 import org.apache.spark.SparkContext
 import org.apache.spark.mllib.linalg.{DenseVector, Vectors}
 import org.apache.spark.mllib.regression.LabeledPoint
@@ -256,7 +257,7 @@ class SparkDriverActor(private val sc: SparkContext) extends ExecutingActor {
     // categorical features info
     case Commands.TrainClassifier(model, sample, categoricalFeatures) =>
       model match {
-        case Models.DecisionTree =>
+        case Models.Types.DecisionTree =>
           val (model, mapping, error) =
             fitClassifier(sample, categoricalFeatures,
               DecisionTreeClassifierFitter(
@@ -269,7 +270,7 @@ class SparkDriverActor(private val sc: SparkContext) extends ExecutingActor {
 
           Future { Commands.TrainClassifierResponse(new SparkDecisionTreeClassificationModel(model, mapping), error) } pipeTo sender()
 
-        case Models.RandomForest =>
+        case Models.Types.RandomForest =>
           val (model, mapping, error) =
             fitClassifier(sample, categoricalFeatures,
               RandomForestClassifierFitter(
@@ -290,7 +291,7 @@ class SparkDriverActor(private val sc: SparkContext) extends ExecutingActor {
     // categorical features info
     case Commands.TrainRegressor(model, sample, categoricalFeatures) =>
       model match {
-        case Models.DecisionTree =>
+        case Models.Types.DecisionTree =>
           val (model, mapping, error) =
             fitRegressor(sample, categoricalFeatures,
               DecisionTreeRegressorFitter(
@@ -302,7 +303,7 @@ class SparkDriverActor(private val sc: SparkContext) extends ExecutingActor {
 
           Future { Commands.TrainRegressorResponse(new SparkDecisionTreeRegressionModel(model, mapping), error) } pipeTo sender()
 
-        case Models.RandomForest =>
+        case Models.Types.RandomForest =>
           val (model, mapping, error) =
             fitRegressor(sample, categoricalFeatures,
               RandomForestRegressorFitter(
@@ -323,14 +324,6 @@ class SparkDriverActor(private val sc: SparkContext) extends ExecutingActor {
 
 object SparkDriverActor {
 
-  /**
-    * Target models driver is capable to fit to sample supplied
-    */
-  object Models extends Enumeration {
-    type Type = Value
-    val DecisionTree, RandomForest = Value
-  }
-
   object Commands {
 
     /**
@@ -338,7 +331,7 @@ object SparkDriverActor {
       *
       * @param sample sample to train classifier on
       */
-    case class TrainClassifier(m: Models.Type, sample: Seq[(Seq[Double], Double)], categoricalFeatures: BitSet)
+    case class TrainClassifier(m: Models.Types.Type, sample: Seq[(Seq[Double], Double)], categoricalFeatures: BitSet)
     case class TrainClassifierResponse(model: ClassificationModel, error: Double)
 
     /**
@@ -346,7 +339,7 @@ object SparkDriverActor {
       *
       * @param sample sample to train regressor on
       */
-    case class TrainRegressor(m: Models.Type, sample: Seq[(Seq[Double], Double)], categoricalFeatures: BitSet)
+    case class TrainRegressor(m: Models.Types.Type, sample: Seq[(Seq[Double], Double)], categoricalFeatures: BitSet)
     case class TrainRegressorResponse(model: RegressionModel, error: Double)
 
   }
