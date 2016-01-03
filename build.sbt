@@ -133,6 +133,13 @@ libraryDependencies ++= {
   )
 }
 
+
+/// Overrides /////////////////////////////////////////////////////////////////////////////////////
+
+dependencyOverrides ++= Set(
+  "com.fasterxml.jackson.core" % "jackson-databind" % "2.4.4"
+)
+
 /// Local Bindings ////////////////////////////////////////////////////////////////////////////////
 
 lazy val runMongo = taskKey[Unit]("Starts the MongoDB instance locally")
