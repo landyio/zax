@@ -115,7 +115,13 @@ libraryDependencies ++= {
 libraryDependencies ++= {
   Seq(
     "com.typesafe.akka" %% "akka-slf4j"       % "2.4.1",
-    "ch.qos.logback"    %  "logback-classic"   % "1.1.3"
+    "ch.qos.logback"    %  "logback-classic"  % "1.1.3"
+  )
+}
+
+libraryDependencies ++= {
+  Seq(
+    "com.maxmind.geoip2" % "geoip2" % "2.4.0"
   )
 }
 

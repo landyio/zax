@@ -8,6 +8,8 @@ import io.landy.app.model._
 import io.landy.app.endpoints.serialization.JsonSupport
 import io.landy.app.storage.Storage
 import io.landy.app.App
+import io.landy.app.util.geo.Resolver
+import io.landy.app.util.geo.Resolver.Unknown
 import spray.http.HttpHeaders.RawHeader
 import spray.http.MediaTypes._
 import spray.http._
@@ -139,10 +141,23 @@ trait PublicEndpoint extends AppEndpoint {
   /**
     * Greps additional info about environment
     */
-  private def mapAdditionalInfo(ip: RemoteAddress, userTs: Long): Map[String, String] = {
+  private def mapAdditionalInfo(addr: RemoteAddress, userTs: Long): Map[String, String] = {
+    val oip = addr.toOption
     Map(
-      "ip"      -> ip.toOption.map { case ip => ip.getHostAddress }.getOrElse("0.0.0.0"),
-      "userTs"  -> userTs.toString
+      Seq("userTs" -> userTs.toString) ++
+      oip .map {
+            case ip =>
+              (Resolver(ip) match {
+                case Unknown  => Seq()
+                case city     => Seq(
+                                    "city"    -> city.name,
+                                    "country" -> city.country
+                                  )
+              }) ++ Seq("ip" -> ip.getHostAddress)
+          }
+          .getOrElse(
+            Seq("ip" -> "0.0.0.0")
+          ): _*
     )
   }
 
