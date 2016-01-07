@@ -120,6 +120,7 @@ class InstanceActor(val appId: Instance.Id, private var config: Instance.Config)
                 switchState(State.Predicting(from = Platform.currentTime))
 
               case Failure(t) =>
+                switchState(State.NoData)
                 log.error(t, "Training of predictor for #{{}} failed!", appId)
             }
         }
@@ -362,17 +363,38 @@ class InstanceActor(val appId: Instance.Id, private var config: Instance.Config)
     case Commands.Suicide() => commitSuicide()
   }
 
-
   /**
     * Reload getConfig and start self-destructing mechanic
     **/
   override def preStart(): Unit = {
     import scala.concurrent.duration._
 
+    /**
+      * Assures that this particular instance is in coherent state, tries to
+      * correct otherwise.
+      *
+      * If all attempts failed -- hands a poison-pill to the actor.
+      */
+    def assureCoherent() = {
+      runState {
+
+        // @State.Training is transient, therefore instance
+        // may not be sticked with it during start-up
+        case State.Training =>
+          switchState(State.NoData)
+            .andThen {
+              case Failure(t) => takePoison()
+            }
+
+        case _ => /* NOP */
+      }
+    }
+
     // TODO(kudinkin): switch to `ready` to swallow exceptions
 
     Await.result(
       reloadConfig().andThen {
+        case Success(_) => assureCoherent()
         case Failure(t) => takePoison()
       },
       30.seconds
@@ -446,7 +468,9 @@ object Instance {
   /**
     * Instance's state
     */
-  sealed trait State extends StateEx
+  sealed trait State extends StateEx {
+    def apply[T](pf: PartialFunction[State, T]) = pf.apply(this)
+  }
 
   trait StateEx {
     val typeName = deduce
