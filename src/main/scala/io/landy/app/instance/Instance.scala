@@ -90,13 +90,13 @@ class InstanceActor(val appId: Instance.Id, private var config: Instance.Config)
 
     import SparkDriverActor.Commands.{TrainRegressor, TrainRegressorResponse}
 
-    val MAXIMAL_SAMPLE_SIZE = 1000
+    val MAX_SAMPLE_SIZE_THRESHOLD = 1e5.toInt
 
     checkEligibility.flatMap {
 
       case true => switchState(State.Training).flatMap { _ =>
 
-          buildTrainingSample(MAXIMAL_SAMPLE_SIZE)
+          buildTrainingSample(MAX_SAMPLE_SIZE_THRESHOLD)
             .flatMap { sample =>
               ask[TrainRegressorResponse](
                 sparkDriverRef,
