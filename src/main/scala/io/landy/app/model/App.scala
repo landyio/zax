@@ -66,5 +66,5 @@ object UserDataDescriptor {
   val `name` = "name"
   val `categorical` = "categorical"
 
-  protected val defaultHash: Option[String] => Int = o => o.map { _.hashCode() }.getOrElse(0)
+  protected val defaultHash: Option[String] => Int = o => o.map { _.hashCode() } getOrElse "None".hashCode
 }
