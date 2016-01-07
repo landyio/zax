@@ -40,7 +40,7 @@ class StorageActor extends ExecutingActor {
     import Logging.extendLogging
     f.andThen {
       case Success(r: Traceable) =>
-        r.trace match { case (t, args) => log.x.debug(t, args:_*) }
+        r.trace match { case (t, _args) => log.x.debug(t, _args:_*) }
       case Failure(t) =>
         log.x.error(t, reason, args)
     }
