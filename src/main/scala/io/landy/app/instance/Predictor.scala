@@ -176,24 +176,34 @@ sealed trait ClassificationModel {
   def predict(vector: Seq[Double]): Int
 }
 
+/**
+  * Abstract feature-extractor trait, allowing to
+  * convert features from one Euclidian space to any other Euclidian-space
+  */
+trait FeatureExtractor {
+  def apply(seq: Seq[Double]): Seq[Double]
+}
+
+
+/**
+  * Interface abstracing Spark-specific models
+  *
+  * @tparam T peculiar type of the Spark's model
+  */
 sealed trait SparkModel[+T <: SparkModel.Model] {
   protected val model: T
-  protected val mapping: SparkModel.Mapping
+
+  protected val x: FeatureExtractor
 
   // TODO(kudinkin): Purge `reflective`-call(s) by narrowing down model-types explicitly
 
   protected def predictFor(seq: Seq[Double]): Double =
     model.predict(
       Vectors.dense(
-        seq .zipWithIndex
-            .map { case (v, i) => mapping(i)(v).toDouble }
-            .toArray
+        x(seq).toArray
       )
     )
 }
-
-@directSubclasses(Array(classOf[SparkDecisionTreeRegressionModel], classOf[SparkDecisionTreeClassificationModel]))
-sealed trait PickleableModel
 
 object SparkModel {
 
@@ -211,11 +221,37 @@ object SparkModel {
     def predict(features: Vector): Double
     def predict(features: RDD[Vector]): RDD[Double]
   }
+
+  case class Extractor(
+    /**
+      * For details see @SparkModel.Mapping
+      */
+    mapping: SparkModel.Mapping,
+
+    /**
+      * Set if indices of features being recognized as
+      * an explanatory ones
+      */
+    explanatory: Set[Int]
+  )
+    extends FeatureExtractor {
+
+    override def apply(seq: Seq[Double]) =
+      seq .zipWithIndex
+          .map {
+            case (v, i) => if (mapping.contains(i)) mapping(i)(v).toDouble else v
+          }
+          .toArray
+  }
+
 }
 
+@directSubclasses(Array(classOf[SparkDecisionTreeRegressionModel], classOf[SparkDecisionTreeClassificationModel]))
+sealed trait PickleableModel
+
 class SparkRegressionModel[+T <: SparkModel.Model](
-  override val model:   T,
-  override val mapping: SparkModel.Mapping
+  override val model: T,
+  override val x:     SparkModel.Extractor
 ) extends RegressionModel
   with    SparkModel[T] {
 
@@ -223,14 +259,16 @@ class SparkRegressionModel[+T <: SparkModel.Model](
 
 }
 
-final case class SparkDecisionTreeRegressionModel(override val model: DecisionTreeModel, override val mapping: SparkModel.Mapping)
-  extends SparkRegressionModel[DecisionTreeModel](model, mapping)
+final case class SparkDecisionTreeRegressionModel(
+  override val model: DecisionTreeModel,
+  override val x:     SparkModel.Extractor
+) extends SparkRegressionModel[DecisionTreeModel](model, x)
   with    PickleableModel
 
 
 class SparkClassificationModel[+T <: SparkModel.Model](
   override val model: T,
-  override val mapping: SparkModel.Mapping
+  override val x:     SparkModel.Extractor
 ) extends ClassificationModel
   with    SparkModel[T] {
 
@@ -240,7 +278,7 @@ class SparkClassificationModel[+T <: SparkModel.Model](
 
 final case class SparkDecisionTreeClassificationModel(
   override val model: DecisionTreeModel,
-  override val mapping: SparkModel.Mapping
-) extends SparkClassificationModel[DecisionTreeModel](model, mapping)
+  override val x:     SparkModel.Extractor
+) extends SparkClassificationModel[DecisionTreeModel](model, x)
   with    PickleableModel
 
