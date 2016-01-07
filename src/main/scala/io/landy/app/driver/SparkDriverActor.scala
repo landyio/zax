@@ -15,16 +15,25 @@ import scala.collection.generic.CanBuildFrom
 import scala.collection.immutable.HashSet
 import scala.collection.{BitSet, GenTraversableOnce}
 import scala.concurrent.Future
-import scala.language.{higherKinds, reflectiveCalls}
+import scala.language.{postfixOps, higherKinds, reflectiveCalls}
 
 class SparkDriverActor(private val sc: SparkContext) extends ExecutingActor {
 
-  def convert(sample: Seq[(Seq[Double], Double)]): RDD[LabeledPoint] = {
-    sc.parallelize(
-      sample.map {
-        case (fs, l) => new LabeledPoint(label = l, features = new DenseVector(fs.toArray))
-      }
-    )
+  def convert(sample: Seq[(Seq[Double], Double)]): (RDD[LabeledPoint], Int) = {
+    val size = sample.head._1.size
+
+    val rdds = sc.parallelize(
+        sample.map {
+          case (fs, l) =>
+            // Sample coming conversion stage must be properly
+            // re-constructed & aligned
+            assert(fs.size == size)
+
+            new LabeledPoint(label = l, features = new DenseVector(fs.toArray))
+        }
+      )
+
+    (rdds, size)
   }
 
   def evaluate(model: SparkModel.Model, testSet: RDD[LabeledPoint]): Double = {
@@ -49,8 +58,8 @@ class SparkDriverActor(private val sc: SparkContext) extends ExecutingActor {
   private def squash[K, V](m: Map[K, GenTraversableOnce[V]]): Map[K, Int] =
     m.map { case (k, vs) => k -> vs.size }
 
-  private def infer(sample: RDD[LabeledPoint], categories: BitSet): Map[Int, Set[Double]] = {
-    val bins = Map(categories.toSeq.map { (_, HashSet[Double]()) }: _*)
+  private def infer(sample: RDD[LabeledPoint], featuresCount: Int): IndexedSeq[Set[Double]] = {
+    val bins = Array((for { i <- 0 until featuresCount } yield HashSet[Double]()) :_*)
 
     sample.aggregate(bins)(
       //
@@ -59,35 +68,42 @@ class SparkDriverActor(private val sc: SparkContext) extends ExecutingActor {
       // (bs, p) => merge(bs,  bs.keys.map { case i => i -> HashSet(p.features(i)) }.toMap)(HashSet.canBuildFrom),
       // (l, r)  => merge(l,   r)                                                          (HashSet.canBuildFrom)
 
-      (bs, p) => bs.foldLeft(bs.keys.map { case i => i -> HashSet(p.features(i)) }.toMap) {
-        case (acc, (k, vs)) => acc + (k -> acc(k).union(vs))
-      },
-      (l, r)  => l.foldLeft(r) {
-        case (acc, (k, vs)) => acc + (k -> acc(k).union(vs))
-      }
-
+      (bs, p)   => bs.zip(p.features.toArray ).map { case (vs, v) => vs + v },
+      (bs, bs0) => bs.zip(bs0).map { case (vs, vs0) => vs.union(vs0) }
     )
   }
 
-  private def remap(ps: RDD[LabeledPoint], categories: Map[Int, Set[Double]]): (Map[Int, Map[Double, Int]], RDD[LabeledPoint]) = {
+  private def remap(ps: RDD[LabeledPoint], supports: IndexedSeq[Set[Double]], categorical: BitSet)
+    : (Map[Int, Map[Double, Int]], Set[Int], RDD[LabeledPoint]) = {
+
+    // Detect which features are _explanatory_ (ie particularly relevant ones)
+    val explanatory = supports.indices.filter { i => supports(i).size > 1 }.toSet
+
+    // Create mapping replacing raw values (seen in training set for
+    // particular _categorical_ feature) with int from range `0 .. support-size`
     val mapping =
-      categories.map {
-        case (i, vs) => i -> vs.zipWithIndex.toMap
-      }
+      categorical
+        .toSeq
+        .filter { explanatory(_) }
+        .map    { case i => i -> supports(i).zipWithIndex.toMap }
+        .toMap
 
     val remapped =
       ps.map {
-        p => LabeledPoint(
-          p.label,
-          Vectors.dense(
-            p.features.toArray
-                      .zipWithIndex
-                      .map { case (v, i) => mapping(i)(v).toDouble }
-          )
-        )
+        p =>  LabeledPoint(
+                p.label,
+                Vectors.dense(
+                  p.features.toArray
+                            .zipWithIndex
+                            .map {
+                              case (v, i) =>
+                                if (mapping.contains(i)) mapping(i)(v).toDouble else v
+                            }
+                )
+              )
       }
 
-    (mapping, remapped)
+    (mapping, explanatory, remapped)
   }
 
   /**
@@ -102,17 +118,17 @@ class SparkDriverActor(private val sc: SparkContext) extends ExecutingActor {
     */
   def prepare(sample: Seq[(Seq[Double], Double)], categorical: BitSet) = {
     // Convert `Seq` into `RDD`
-    val converted = convert(sample)
+    val (converted, featuresCount) = convert(sample)
 
     // Extract proper categories out of training &
     // build remapping tables for those features
-    val categories = infer(converted, categorical)
+    val supports = infer(converted, featuresCount)
 
     // Remap actual feature values into 'densified'
     // categorical space
-    val (mapping, remapped) = remap(converted, categories)
+    val (mapping, explanatory, remapped) = remap(converted, supports, categorical)
 
-    (categories, mapping, remapped)
+    (mapping, explanatory, remapped)
   }
 
   /**
@@ -205,14 +221,14 @@ class SparkDriverActor(private val sc: SparkContext) extends ExecutingActor {
     fitter: ClassifierFitter[T]
   ): (T, SparkModel.Mapping, Double) = {
 
-    val (categories, mapping, remapped) = prepare(sample, categorical)
-    val (training, test)                = split(remapped)
+    val (mapping, explanatory, remapped)  = prepare(sample, categorical)
+    val (training, test)                  = split(remapped)
 
-    val model = fitter(training, squash(categories))
+    val model = fitter(training, squash(mapping))
 
     val error = evaluate(model, test)
 
-    (model, mapping, error)
+    (model, mapping, explanatory, error)
   }
 
 
@@ -233,19 +249,20 @@ class SparkDriverActor(private val sc: SparkContext) extends ExecutingActor {
 
     log.info("Training regressor with sample total of {} elements", sample.size)
 
-    val (categories, mapping, remapped) = prepare(sample, categorical)
-    val (training, test)                = split(remapped)
+    val (mapping, explanatory, remapped)  = prepare(sample, categorical)
+    val (training, test)                 = split(remapped)
 
-    val model = fitter(training, squash(categories))
+    val model = fitter(training, squash(mapping))
 
     val error = evaluate(model, test)
 
-    log.info(s"Finished training regressor {} \n" +
-             s"Sample #:   {}                 \n" +
-             s"Categories: {}                 \n" +
-             s"Error:      {}                 \n", model, sample.size, categories, error)
+    log.info(s"Finished training regressor {}   \n" +
+             s"Sample #:    ${sample.size}      \n" +
+             s"Mapping:     {}                  \n" +
+             s"Explanatory: {}                  \n" +
+             s"Error:       {}                  \n", model, mapping, explanatory, error)
 
-    (model, mapping, error)
+    (model, mapping, explanatory, error)
   }
 
 
@@ -258,32 +275,32 @@ class SparkDriverActor(private val sc: SparkContext) extends ExecutingActor {
     case Commands.TrainClassifier(model, sample, categoricalFeatures) =>
       model match {
         case Models.Types.DecisionTree =>
-          val (model, mapping, error) =
+          val (model, mapping, explanatory, error) =
             fitClassifier(sample, categoricalFeatures,
               DecisionTreeClassifierFitter(
                 numClasses  = 2,
-                maxBins     = 32,
+                maxBins     = 64,
                 maxDepth    = 10,
                 impurity    = "gini"
               )
             )
 
-          Future { Commands.TrainClassifierResponse(new SparkDecisionTreeClassificationModel(model, mapping), error) } pipeTo sender()
+          Future { Commands.TrainClassifierResponse(new SparkDecisionTreeClassificationModel(model, mapping, explanatory), error) } pipeTo sender()
 
         case Models.Types.RandomForest =>
-          val (model, mapping, error) =
+          val (model, mapping, explanatory, error) =
             fitClassifier(sample, categoricalFeatures,
               RandomForestClassifierFitter(
                 numClasses            = 2,
                 numTrees              = 3,
                 featureSubsetStrategy = "auto",
-                maxBins               = 32,
+                maxBins               = 64,
                 maxDepth              = 10,
                 impurity              = "gini"
               )
             )
 
-          Future { Commands.TrainClassifierResponse(new SparkRandomForestClassificationModel(model, mapping), error) } pipeTo sender()
+          Future { Commands.TrainClassifierResponse(new SparkRandomForestClassificationModel(model, mapping, explanatory), error) } pipeTo sender()
 
       }
 
@@ -292,30 +309,30 @@ class SparkDriverActor(private val sc: SparkContext) extends ExecutingActor {
     case Commands.TrainRegressor(model, sample, categoricalFeatures) =>
       model match {
         case Models.Types.DecisionTree =>
-          val (model, mapping, error) =
+          val (model, mapping, explanatory, error) =
             fitRegressor(sample, categoricalFeatures,
               DecisionTreeRegressorFitter(
-                maxBins     = 32,
+                maxBins     = 64,
                 maxDepth    = 16,
                 impurity    = "variance"
               )
             )
 
-          Future { Commands.TrainRegressorResponse(new SparkDecisionTreeRegressionModel(model, mapping), error) } pipeTo sender()
+          Future { Commands.TrainRegressorResponse(new SparkDecisionTreeRegressionModel(model, mapping, explanatory), error) } pipeTo sender()
 
         case Models.Types.RandomForest =>
-          val (model, mapping, error) =
+          val (model, mapping, explanatory, error) =
             fitRegressor(sample, categoricalFeatures,
               RandomForestRegressorFitter(
                 numTrees              = 3,
                 featureSubsetStrategy = "auto",
-                maxBins               = 32,
+                maxBins               = 64,
                 maxDepth              = 16,
                 impurity              = "variance"
               )
             )
 
-          Future { Commands.TrainRegressorResponse(new SparkRandomForestRegressionModel(model, mapping), error) } pipeTo sender()
+          Future { Commands.TrainRegressorResponse(new SparkRandomForestRegressionModel(model, mapping, explanatory), error) } pipeTo sender()
       }
 
   }
