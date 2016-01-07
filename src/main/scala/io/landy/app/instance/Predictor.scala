@@ -6,6 +6,7 @@ import io.landy.app.model.{UserDataDescriptor, UserIdentity, Variation}
 import scala.language.reflectiveCalls
 import scala.util.Random
 
+import io.landy.app.util.arrayOps
 
 trait Predictor {
 
@@ -236,7 +237,20 @@ object SparkModel {
     override def apply(seq: Seq[Double]) =
       seq .zipWithIndex
           .map {
-            case (v, i) => if (mapping.contains(i)) mapping(i)(v).toDouble else v
+            case (v, i) =>
+
+              // We still can see _new_ value of the particular feature
+              // that was treated as categorical one during training
+              //
+              // Is there any other 'graceful' fallback instead random-guess-replace
+              // we're replacing this particular feature value with the one of the seen
+              // at random
+              if (!mapping.contains(i))
+                v
+              else if (!mapping(i).contains(v))
+                mapping(i).values.toArray.random.get
+              else
+                mapping(i)(v)
           }
           .toArray
   }
