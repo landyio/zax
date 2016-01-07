@@ -135,7 +135,7 @@ class SparkDriverActor(private val sc: SparkContext) extends ExecutingActor {
   private def trainClassifier(sample: Seq[(Seq[Double], Double)], categorical: BitSet): Future[TrainClassifierResponse] = {
     // TODO(kudinkin): Extract
 
-    val maxBins     = 32
+    val maxBins     = 64
     val maxDepth    = 10
     val impurity    = "gini"
     val numClasses  = 2
@@ -161,7 +161,7 @@ class SparkDriverActor(private val sc: SparkContext) extends ExecutingActor {
 
     log.info("Training regressor with sample total of {} elements", sample.size)
 
-    val maxBins     = 32
+    val maxBins     = 64
     val maxDepth    = 16
     val impurity    = "variance"
 
