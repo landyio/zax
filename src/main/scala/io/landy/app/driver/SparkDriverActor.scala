@@ -187,8 +187,11 @@ class SparkDriverActor(private val sc: SparkContext) extends ExecutingActor {
   }
 
   override def receive: Receive = trace {
-    case Commands.TrainClassifier(sample, categories) => trainClassifier(sample, categories) pipeTo sender()
-    case Commands.TrainRegressor(sample, categories)  => trainRegressor(sample, categories) pipeTo sender()
+    case Commands.TrainClassifier(sample, categories) =>
+      trainClassifier(sample, categories) pipeTo sender()
+
+    case Commands.TrainRegressor(sample, categories)  =>
+      trainRegressor(sample, categories) pipeTo sender()
   }
 
 }
@@ -202,7 +205,10 @@ object SparkDriverActor {
       *
       * @param sample   sample to train classifier on
       */
-    case class TrainClassifier(sample: Seq[(Seq[Double], Double)], categories: BitSet)
+    case class TrainClassifier(sample: Seq[(Seq[Double], Double)], categories: BitSet) {
+      override def toString: String = s"TrainClassifier(Array[${sample.size}], ${categories})"
+    }
+
     case class TrainClassifierResponse(model: ClassificationModel, error: Double)
 
     /**
@@ -210,7 +216,10 @@ object SparkDriverActor {
       *
       * @param sample   sample to train regressor on
       */
-    case class TrainRegressor(sample: Seq[(Seq[Double], Double)], categories: BitSet)
+    case class TrainRegressor(sample: Seq[(Seq[Double], Double)], categories: BitSet) {
+      override def toString: String = s"TrainRegressor(Array[${sample.size}, ${categories})"
+    }
+
     case class TrainRegressorResponse(model: RegressionModel, error: Double)
 
   }
