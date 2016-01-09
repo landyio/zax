@@ -205,7 +205,7 @@ class InstanceActor(val appId: Instance.Id, private var config: Instance.Config)
       }
       .map {
         case Some(r)  => r.config
-        case None     => throw new Exception(s"Failed to retrieve app's {#${appId.value}} configuration!")
+        case None     => throw new ConfigurationException(s"Failed to retrieve app's {#${appId.value}} configuration!")
       }
   }
 
@@ -391,13 +391,14 @@ class InstanceActor(val appId: Instance.Id, private var config: Instance.Config)
       }
     }
 
-    // TODO(kudinkin): switch to `ready` to swallow exceptions
-
-    Await.result(
-      reloadConfig().andThen {
-        case Success(_) => assureCoherent()
-        case Failure(t) => takePoison()
-      },
+    Await.ready(
+      reloadConfig()
+        .andThen {
+          case Success(_) => assureCoherent()
+          case Failure(t) =>
+            log.debug("Failed to start actor for the app #{{}}! Reason: {}", appId, t.getMessage)
+            takePoison()
+        },
       30.seconds
     )
 
@@ -587,7 +588,7 @@ object Instance {
 
     case class StartRequest() extends AppInstanceChangeRunStateMessage
     case class StopRequest() extends AppInstanceChangeRunStateMessage
-    
+
     val predictTimeout: Timeout = 500.milliseconds
 
     case class PredictRequest(identity: UserIdentity) extends AutoStartMessage[PredictResponse]
@@ -599,4 +600,6 @@ object Instance {
     private[instance] case class TrainResponse(error: Double)
 
   }
+
+  case class ConfigurationException(message: String) extends Exception(message)
 }
