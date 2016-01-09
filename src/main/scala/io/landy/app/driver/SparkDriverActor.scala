@@ -219,7 +219,7 @@ class SparkDriverActor(private val sc: SparkContext) extends ExecutingActor {
     sample: Seq[(Seq[Double], Double)],
     categorical: BitSet,
     fitter: ClassifierFitter[T]
-  ): (T, SparkModel.Mapping, Double) = {
+  ): (T, SparkModel.Mapping, Set[Int], Double) = {
 
     val (mapping, explanatory, remapped)  = prepare(sample, categorical)
     val (training, test)                  = split(remapped)
@@ -245,7 +245,7 @@ class SparkDriverActor(private val sc: SparkContext) extends ExecutingActor {
     sample: Seq[(Seq[Double], Double)],
     categorical: BitSet,
     fitter: RegressorFitter[T]
-  ): (T, SparkModel.Mapping, Double) = {
+  ): (T, SparkModel.Mapping, Set[Int], Double) = {
 
     log.info("Training regressor with sample total of {} elements", sample.size)
 
@@ -279,13 +279,18 @@ class SparkDriverActor(private val sc: SparkContext) extends ExecutingActor {
             fitClassifier(sample, categoricalFeatures,
               DecisionTreeClassifierFitter(
                 numClasses  = 2,
-                maxBins     = 64,
-                maxDepth    = 10,
+                maxBins     = 512,
+                maxDepth    = 16,
                 impurity    = "gini"
               )
             )
 
-          Future { Commands.TrainClassifierResponse(new SparkDecisionTreeClassificationModel(model, mapping, explanatory), error) } pipeTo sender()
+          Future {
+            Commands.TrainClassifierResponse(
+              new SparkDecisionTreeClassificationModel(model, SparkModel.Extractor(mapping, explanatory)),
+              error
+            )
+          } pipeTo sender()
 
         case Models.Types.RandomForest =>
           val (model, mapping, explanatory, error) =
@@ -294,13 +299,18 @@ class SparkDriverActor(private val sc: SparkContext) extends ExecutingActor {
                 numClasses            = 2,
                 numTrees              = 3,
                 featureSubsetStrategy = "auto",
-                maxBins               = 64,
-                maxDepth              = 10,
+                maxBins               = 512,
+                maxDepth              = 16,
                 impurity              = "gini"
               )
             )
 
-          Future { Commands.TrainClassifierResponse(new SparkRandomForestClassificationModel(model, mapping, explanatory), error) } pipeTo sender()
+          Future {
+            Commands.TrainClassifierResponse(
+              new SparkRandomForestClassificationModel(model, SparkModel.Extractor(mapping, explanatory)),
+              error
+            )
+          } pipeTo sender()
 
       }
 
@@ -312,13 +322,18 @@ class SparkDriverActor(private val sc: SparkContext) extends ExecutingActor {
           val (model, mapping, explanatory, error) =
             fitRegressor(sample, categoricalFeatures,
               DecisionTreeRegressorFitter(
-                maxBins     = 64,
-                maxDepth    = 16,
+                maxBins     = 512,
+                maxDepth    = 24,
                 impurity    = "variance"
               )
             )
 
-          Future { Commands.TrainRegressorResponse(new SparkDecisionTreeRegressionModel(model, mapping, explanatory), error) } pipeTo sender()
+          Future {
+            Commands.TrainRegressorResponse(
+              new SparkDecisionTreeRegressionModel(model, SparkModel.Extractor(mapping, explanatory)),
+              error
+            )
+          } pipeTo sender()
 
         case Models.Types.RandomForest =>
           val (model, mapping, explanatory, error) =
@@ -326,13 +341,18 @@ class SparkDriverActor(private val sc: SparkContext) extends ExecutingActor {
               RandomForestRegressorFitter(
                 numTrees              = 3,
                 featureSubsetStrategy = "auto",
-                maxBins               = 64,
-                maxDepth              = 16,
+                maxBins               = 512,
+                maxDepth              = 24,
                 impurity              = "variance"
               )
             )
 
-          Future { Commands.TrainRegressorResponse(new SparkRandomForestRegressionModel(model, mapping, explanatory), error) } pipeTo sender()
+          Future {
+            Commands.TrainRegressorResponse(
+              new SparkRandomForestRegressionModel(model, SparkModel.Extractor(mapping, explanatory)),
+              error
+            )
+          } pipeTo sender()
       }
 
   }
@@ -348,7 +368,10 @@ object SparkDriverActor {
       *
       * @param sample sample to train classifier on
       */
-    case class TrainClassifier(m: Models.Types.Type, sample: Seq[(Seq[Double], Double)], categoricalFeatures: BitSet)
+    case class TrainClassifier(m: Models.Types.Type, sample: Seq[(Seq[Double], Double)], categoricalFeatures: BitSet) {
+      override def toString: String = s"TrainClassifier(Array[${sample.size}], $categoricalFeatures)"
+    }
+
     case class TrainClassifierResponse(model: ClassificationModel, error: Double)
 
     /**
@@ -356,7 +379,10 @@ object SparkDriverActor {
       *
       * @param sample sample to train regressor on
       */
-    case class TrainRegressor(m: Models.Types.Type, sample: Seq[(Seq[Double], Double)], categoricalFeatures: BitSet)
+    case class TrainRegressor(m: Models.Types.Type, sample: Seq[(Seq[Double], Double)], categoricalFeatures: BitSet) {
+      override def toString: String = s"TrainRegressor(Array[${sample.size}, $categoricalFeatures)"
+    }
+
     case class TrainRegressorResponse(model: RegressionModel, error: Double)
 
   }

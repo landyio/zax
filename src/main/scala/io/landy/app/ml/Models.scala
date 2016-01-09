@@ -8,6 +8,8 @@ import scala.language.{existentials, reflectiveCalls}
 import scala.pickling.pickler.PrimitivePicklers
 import scala.pickling.{Pickle, PickleFormat, directSubclasses}
 
+import io.landy.app.util.arrayOps
+
 
 sealed trait RegressionModel {
   def predict(vector: Seq[Double]): Double
@@ -17,20 +19,23 @@ sealed trait ClassificationModel {
   def predict(vector: Seq[Double]): Int
 }
 
+/**
+  * Abstract feature-extractor trait, allowing to
+  * convert features from one Euclidian space to any other Euclidian-space
+  */
+trait FeatureExtractor {
+  def apply(seq: Seq[Double]): Seq[Double]
+}
+
+
 sealed trait SparkModel[+T <: SparkModel.Model] {
-  protected val model: T
-  protected val mapping: SparkModel.Mapping
+  protected val model:  T
+  protected val x:      SparkModel.Extractor
 
   // TODO(kudinkin): Purge `reflective`-call(s) by narrowing down model-types explicitly
 
   protected def predictFor(seq: Seq[Double]): Double =
-    model.predict(
-      Vectors.dense(
-        seq .zipWithIndex
-          .map { case (v, i) => mapping(i)(v).toDouble }
-          .toArray
-      )
-    )
+    model.predict(Vectors.dense(x(seq).toArray))
 }
 
 @directSubclasses(
@@ -57,13 +62,56 @@ object SparkModel {
     def predict(features: Vector): Double
     def predict(features: RDD[Vector]): RDD[Double]
   }
+
+  case class Extractor(
+    /**
+      * For details see @SparkModel.Mapping
+      */
+    mapping: SparkModel.Mapping,
+
+    /**
+      * Set if indices of features being recognized as
+      * an explanatory ones
+      */
+    explanatory: Set[Int]
+  )
+    extends FeatureExtractor {
+
+    override def apply(seq: Seq[Double]) =
+      seq .zipWithIndex
+        .map {
+          case (v, i) =>
+
+            // We still can see _new_ value of the particular feature
+            // that was treated as categorical one during training
+            //
+            // Is there any other 'graceful' fallback instead random-guess-replace
+            // we're replacing this particular feature value with the one of the seen
+            // at random
+            if (!mapping.contains(i))
+              v
+            else if (!mapping(i).contains(v))
+              mapping(i).values.toArray.random.get
+            else
+              mapping(i)(v)
+        }
+        .toArray
+  }
+
 }
 
+/**
+  * Spark's MLLib abstract regression-model facade
+  *
+  * @param model  target model
+  * @param x      feature-extractor
+  * @tparam T     type of the target model
+  */
 class SparkRegressionModel[+T <: SparkModel.Model](
-  override val model:   T,
-  override val mapping: SparkModel.Mapping
+  override val model: T,
+  override val x:     SparkModel.Extractor
 ) extends RegressionModel
-with    SparkModel[T] {
+  with    SparkModel[T] {
 
   override def predict(seq: Seq[Double]): Double = predictFor(seq)
 
@@ -72,27 +120,33 @@ with    SparkModel[T] {
 /**
   * Spark's MLLib _regression_ decision-tree-model facade
   *
-  * @param model    target decision-tree-model
-  * @param mapping  see @SparkRegressionModel for details
+  * @param model  target decision-tree-model
+  * @param x      see @SparkRegressionModel for details
   */
-final case class SparkDecisionTreeRegressionModel(override val model: DecisionTreeModel, override val mapping: SparkModel.Mapping)
-  extends SparkRegressionModel[DecisionTreeModel](model, mapping)
+final case class SparkDecisionTreeRegressionModel(
+  override val model: DecisionTreeModel,
+  override val x: SparkModel.Extractor
+)
+  extends SparkRegressionModel[DecisionTreeModel](model, x)
   with    PickleableModel
 
 /**
   * Spark's MLLib _regression_ random-forest-model facade
   *
-  * @param model    target random-forest-model
-  * @param mapping  see @SparkRegressionModel for details
+  * @param model  target random-forest-model
+  * @param x      see @SparkRegressionModel for details
   */
-final case class SparkRandomForestRegressionModel(override val model: RandomForestModel, override val mapping: SparkModel.Mapping)
-  extends SparkRegressionModel[RandomForestModel](model, mapping)
+final case class SparkRandomForestRegressionModel(
+  override val model: RandomForestModel,
+  override val x:     SparkModel.Extractor
+)
+  extends SparkRegressionModel[RandomForestModel](model, x)
   with    PickleableModel
 
 
 class SparkClassificationModel[+T <: SparkModel.Model](
   override val model: T,
-  override val mapping: SparkModel.Mapping
+  override val x:     SparkModel.Extractor
 ) extends ClassificationModel
   with    SparkModel[T] {
 
@@ -103,21 +157,27 @@ class SparkClassificationModel[+T <: SparkModel.Model](
 /**
   * Spark's MLLib _classification_ decision-tree-model facade
   *
-  * @param model    target decision-tree-model
-  * @param mapping  see @SparkRegressionModel for details
+  * @param model  target decision-tree-model
+  * @param x      see @SparkRegressionModel for details
   */
-final case class SparkDecisionTreeClassificationModel(override val model: DecisionTreeModel, override val mapping: SparkModel.Mapping)
-  extends SparkClassificationModel[DecisionTreeModel](model, mapping)
+final case class SparkDecisionTreeClassificationModel(
+  override val model: DecisionTreeModel,
+  override val x:     SparkModel.Extractor
+)
+  extends SparkClassificationModel[DecisionTreeModel](model, x)
   with    PickleableModel
 
 /**
   * Spark's MLLib _classification_ random-forest-model facade
   *
-  * @param model    target random-forest-model
-  * @param mapping  see @SparkRegressionModel for details
+  * @param model  target random-forest-model
+  * @param x      see @SparkRegressionModel for details
   */
-final case class SparkRandomForestClassificationModel(override val model: RandomForestModel, override val mapping: SparkModel.Mapping)
-  extends SparkClassificationModel[RandomForestModel](model, mapping)
+final case class SparkRandomForestClassificationModel(
+  override val model: RandomForestModel,
+  override val x:     SparkModel.Extractor
+)
+  extends SparkClassificationModel[RandomForestModel](model, x)
   with    PickleableModel
 
 
