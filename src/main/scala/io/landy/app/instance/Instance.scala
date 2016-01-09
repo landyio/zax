@@ -323,43 +323,52 @@ class InstanceActor(val appId: Instance.Id, private var config: Instance.Config)
     // TODO(kudinkin): Transition to `akka.FSM` (!)
     //
 
-    case Commands.ReloadConfig() => runState is Any then {
-      reloadConfig() pipeTo sender()
-    }
+    case Commands.ReloadConfig() =>
+      runState is Any then {
+        reloadConfig() pipeTo sender()
+      }
 
-    case Commands.StatusRequest() => runState is Any then {
-      getStatus() pipeTo sender()
-    }
+    case Commands.StatusRequest() =>
+      runState except State.Loading then {
+        getStatus() pipeTo sender()
+      }
 
-    case Commands.ConfigRequest() => runState is Any then {
-      sender ! config
-    }
+    case Commands.ConfigRequest() =>
+      runState except State.Loading then {
+        sender ! config
+      }
 
-    case r @ Storage.Commands.StoreRequest(_, _) => runState except State.Suspended then {
-      storage() ? r pipeTo sender()
-    }
+    case r @ Storage.Commands.StoreRequest(_, _) =>
+      runState except State.Suspended or
+                      State.Loading   then {
+        storage() ? r pipeTo sender()
+      }
 
-    case Commands.PredictRequest(uid) => runState except State.Suspended then {
-      // TODO(kudinkin): move?
-      self    ! Commands.TrainRequest()
-      sender  ! Commands.PredictResponse(predict(uid), runState)
-    }
+    case Commands.PredictRequest(uid) =>
+      runState except State.Suspended or
+                      State.Loading   then {
+        // TODO(kudinkin): move?
+        self    ! Commands.TrainRequest()
+        sender  ! Commands.PredictResponse(predict(uid), runState)
+      }
 
-    case Commands.TrainRequest() => runState except State.Suspended or
-                                                    State.Training  then {
-
+    case Commands.TrainRequest() =>
+      runState except State.Suspended or
+                      State.Loading   or
+                      State.Training  then {
       assert(runState != State.Suspended || runState != State.Training)
-
       trainIfEligible() pipeTo sender()
     }
 
-    case Commands.StartRequest() => runState is Suspended then {
-      start() pipeTo sender()
-    }
+    case Commands.StartRequest() =>
+      runState is State.Suspended then {
+        start() pipeTo sender()
+      }
 
-    case Commands.StopRequest() => runState is Any then {
-      stop() pipeTo sender()
-    }
+    case Commands.StopRequest() =>
+      runState except State.Loading then {
+        stop() pipeTo sender()
+      }
 
     case Commands.Suicide() => commitSuicide()
   }
