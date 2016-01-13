@@ -81,7 +81,7 @@ trait PrivateEndpoint extends AppEndpoint {
                   askApp[Instance.Config](appId, ReloadConfig())
               }
           )
-        }} ~ die(`json body required`)
+        }} ~ die(`json required`)
       } ~
       (path("delete") & `json/post`) {
         extract(ctx => ctx) { ctx => {
@@ -124,13 +124,11 @@ trait PrivateEndpoint extends AppEndpoint {
   }
 
   override private[endpoints] def appRoute(appId: Instance.Id): Route = {
-//    super.appRoute(appId) ~
-      //authenticate(authenticator) {
-      //  principal: Principal => {
-      //    control(appId, principal)
-      //  }
-      //} ~
-      control(appId, null)
+    super.appRoute(appId) ~ authenticate(authenticator) {
+      principal: Principal => {
+        control(appId, principal)
+      }
+    }
   }
 
 }
@@ -197,7 +195,7 @@ trait PublicEndpoint extends AppEndpoint {
               )
             }
           )
-        }}} ~ die(`json body required`)
+        }}} ~ die(`json required`)
       } ~
       (path("predict") & `json/post`) {
         entity(as[JsObject]) { json => clientIP { ip => {
@@ -224,7 +222,7 @@ trait PublicEndpoint extends AppEndpoint {
                 )
               }
           )
-        }}} ~ die(`json body required`)
+        }}} ~ die(`json required`)
       } ~
       (path("finish") & `json/post`) {
         entity(as[JsObject]) { json => {
@@ -234,7 +232,7 @@ trait PublicEndpoint extends AppEndpoint {
                                   timestamp = System.currentTimeMillis()))
 
           complete("")
-        }} ~ die(`json body required`)
+        }} ~ die(`json required`)
       }
   }
 
@@ -314,26 +312,27 @@ trait Service extends HttpService with JsonSupport
     )
   }}
 
-  protected val `not implemented` = "Not implemented yet"
-  protected val `json body required` = "Request body should be a JSON"
+  protected val `not implemented` = "Not Implemented"
+  protected val `json required`   = "Request body should be a valid JSON object"
 
   protected val `Access-Control-Allow-Origin: *` = RawHeader("Access-Control-Allow-Origin", "*")
-  protected val `json/post` = post & respondWithMediaType(`application/json`) & respondWithHeader(`Access-Control-Allow-Origin: *`)
-  protected val `json/get` = get & respondWithMediaType(`application/json`) & respondWithHeader(`Access-Control-Allow-Origin: *`)
 
-  protected val placeholder = reject // noop
+  protected val `json/post` = post  & respondWithMediaType(`application/json`) & respondWithHeader(`Access-Control-Allow-Origin: *`)
+  protected val `json/get`  = get   & respondWithMediaType(`application/json`) & respondWithHeader(`Access-Control-Allow-Origin: *`)
+
+  protected val placeholder = reject
 
   protected val `options/origin`: Route = options {
-    headerValueByName("Origin") { origin: String => {
-      respondWithHeaders(
-        RawHeader("Access-Control-Allow-Origin", origin),
-        RawHeader("Access-Control-Allow-Methods", "GET,POST"),
-        RawHeader("Access-Control-Allow-Headers", "accept, content-type"),
-        RawHeader("Access-Control-Max-Age", "1728000")
-      ) {
-        complete("")
+    headerValueByName("Origin") {
+      origin: String => {
+        respondWithHeaders(
+          RawHeader("Access-Control-Allow-Origin", origin),
+          RawHeader("Access-Control-Allow-Methods", "GET,POST"),
+          RawHeader("Access-Control-Allow-Headers", "accept, content-type"),
+          RawHeader("Access-Control-Max-Age", "1728000")
+        ) { complete("") }
       }
-    }}
+    }
   }
 
   private def userAuth(in: Option[UserPass]): Future[Option[Principal]] = Future {
@@ -346,12 +345,16 @@ trait Service extends HttpService with JsonSupport
   )
 
   implicit val exceptionHandler: ExceptionHandler = ExceptionHandler {
-    case e: spray.json.DeserializationException => respondWithHeader(`Access-Control-Allow-Origin: *`) {
-      ctx => ctx.complete(StatusCodes.BadRequest, e.toString)
-    }
-    case e: Exception => respondWithHeader(`Access-Control-Allow-Origin: *`) {
-      ctx => ctx.complete(StatusCodes.InternalServerError, e.toString)
-    }
+
+    case e: spray.json.DeserializationException =>
+      respondWithHeader(`Access-Control-Allow-Origin: *`) {
+        _.complete(StatusCodes.BadRequest, e.toString)
+      }
+
+    case e: Exception =>
+      respondWithHeader(`Access-Control-Allow-Origin: *`) {
+        _.complete(StatusCodes.InternalServerError, e.toString)
+      }
   }
 
 }
