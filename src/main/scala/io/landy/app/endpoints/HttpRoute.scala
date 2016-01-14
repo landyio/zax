@@ -2,6 +2,7 @@ package io.landy.app.endpoints
 
 import akka.actor._
 import akka.util.Timeout
+import com.typesafe.config.ConfigFactory
 import io.landy.app.actors.{Logging, AskSupport, DefaultTimeout}
 import io.landy.app.instance._
 import io.landy.app.model._
@@ -10,7 +11,7 @@ import io.landy.app.storage.Storage
 import io.landy.app.App
 import io.landy.app.util.geo.Resolver
 import io.landy.app.util.geo.Resolver.Unknown
-import spray.http.HttpHeaders.RawHeader
+import spray.http.HttpHeaders.{`WWW-Authenticate`, RawHeader}
 import spray.http.MediaTypes._
 import spray.http._
 import spray.json._
@@ -124,10 +125,8 @@ trait PrivateEndpoint extends AppEndpoint {
   }
 
   override private[endpoints] def appRoute(appId: Instance.Id): Route = {
-    super.appRoute(appId) ~ authenticate(authenticator) {
-      principal: Principal => {
-        control(appId, principal)
-      }
+    authenticate(authenticator) {
+      p => control(appId, p)
     }
   }
 
@@ -335,15 +334,45 @@ trait Service extends HttpService with JsonSupport
     }
   }
 
-  private def userAuth(in: Option[UserPass]): Future[Option[Principal]] = Future {
-    in.flatMap(u => Some(new Principal(id = "0", name = u.user, pass = u.pass)))
+  private val authSchemeConfig = ConfigFactory.load()
+
+  type TokenAuthenticator[T] = Option[(String, String)] => Future[Option[T]]
+
+  case class BasicTokenAuthenticator(
+    realm: String,
+    tokenAuthenticator: TokenAuthenticator[Principal])(implicit val executionContext: ExecutionContext
+  ) extends HttpAuthenticator[Principal] {
+
+    override def authenticate(credentials: Option[HttpCredentials], ctx: RequestContext): Future[Option[Principal]] =
+      tokenAuthenticator {
+        credentials.flatMap {
+          case GenericHttpCredentials(scheme, token, _) => Some((scheme, token))
+          case _                                        => None
+        }
+      }
+
+    override def getChallengeHeaders(httpRequest: HttpRequest): List[HttpHeader] =
+      `WWW-Authenticate`(HttpChallenge("Token", realm = realm, params = Map.empty)) :: Nil
   }
 
-  protected val authenticator: HttpAuthenticator[Principal] = BasicAuth(
-    authenticator = CachedUserPassAuthenticator(userAuth),
-    realm = ""
-  )
+  protected val authenticator =
+    BasicTokenAuthenticator(
+      realm = "",
+      tokenAuthenticator =
+        params =>
+          Future {
+            params.flatMap {
+              case (scheme, token) =>
+                if (authSchemeConfig.getString("spray.routing.private.scheme").equalsIgnoreCase(token)
+                &&  authSchemeConfig.getString("spray.routing.private.token") .equals(token)) Some(God)
+                else                                                                          None
+            }
+          }
+    )
 
+  /**
+    * Exception-handler for the endpoints
+    */
   implicit val exceptionHandler: ExceptionHandler = ExceptionHandler {
 
     case e: spray.json.DeserializationException =>
