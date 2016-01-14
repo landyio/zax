@@ -84,7 +84,7 @@ class BootActor extends Actor with ActorTracing
 
     implicit lazy val engineProvider = ServerSSLEngineProvider {
       engine => {
-        engine.setEnabledProtocols    (Array("SSLv3", "TLSv1", "TLSv1.1", "TLSv1.2"))
+        engine.setEnabledProtocols(Array("SSLv3", "TLSv1", "TLSv1.1", "TLSv1.2"))
         engine
       }
     }

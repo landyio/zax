@@ -37,91 +37,92 @@ trait PrivateEndpoint extends AppEndpoint {
   import Storage.Persisters._
 
   @inline
-  private[endpoints] def control(appId: Instance.Id, principal: Principal): Route = pathPrefix("control") {
-    placeholder ~
-      (path("config") & `json/get`) {
-        extract(ctx => ctx) { ctx => {
-          import Instance.Commands.ConfigRequest
+  private[endpoints] def control(appId: Instance.Id, principal: Principal): Route =
+    pathPrefix("control") {
+      placeholder ~
+        (path("config") & `json/get`) {
+          extract(ctx => ctx) { ctx => {
+            import Instance.Commands.ConfigRequest
 
-          complete(
-            askApp[Instance.Config](appId, ConfigRequest())
-              .map { v => v.toJson.asJsObject }
-          )
-        }}
-      } ~
-      (path("status") & `json/get`) {
-        extract(ctx => ctx) { ctx => {
-          import Instance.Commands.StatusRequest
+            complete(
+              askApp[Instance.Config](appId, ConfigRequest())
+                .map { v => v.toJson.asJsObject }
+            )
+          }}
+        } ~
+        (path("status") & `json/get`) {
+          extract(ctx => ctx) { ctx => {
+            import Instance.Commands.StatusRequest
 
-          complete(
-            askApp[Instance.Status](appId, StatusRequest())
-              .map { v => v.toJson.asJsObject }
-          )
-        }}
-      } ~
-      (path("create") & `json/post`) {
-        entity(as[JsObject]) { json => {
-          val config = json.convertTo[Instance.Config]
+            complete(
+              askApp[Instance.Status](appId, StatusRequest())
+                .map { v => v.toJson.asJsObject }
+            )
+          }}
+        } ~
+        (path("create") & `json/post`) {
+          entity(as[JsObject]) { json => {
+            val config = json.convertTo[Instance.Config]
 
-          import Instance.Commands.ReloadConfig
+            import Instance.Commands.ReloadConfig
 
-          import Storage.Commands.{Store, StoreResponse}
-          import Storage.Persisters.instanceRecordPersister
+            import Storage.Commands.{Store, StoreResponse}
+            import Storage.Persisters.instanceRecordPersister
 
-          complete(
-            ask[StoreResponse](storageRef, Store(Instance.Record(appId = appId, config = config)))
-              .map { res =>
-                JsObject(
-                  "id"      -> JsString(appId.value),
-                  "result"  -> JsBoolean(res.ok)
-                )
-              }
-              .andThen {
-                case Success(x) =>
-                  log.info("Successfully created app-instance {#{}}!", appId)
-                  askApp[Instance.Config](appId, ReloadConfig())
-              }
-          )
-        }} ~ die(`json required`)
-      } ~
-      (path("delete") & `json/post`) {
-        extract(ctx => ctx) { ctx => {
-          die(`not implemented`)
-        }}
-      } ~
-      (path("start") & `json/post`) {
-        extract(ctx => ctx) { ctx => {
-          import Instance.Commands.StartRequest
+            complete(
+              ask[StoreResponse](storageRef, Store(Instance.Record(appId = appId, config = config)))
+                .map { res =>
+                  JsObject(
+                    "id"      -> JsString(appId.value),
+                    "result"  -> JsBoolean(res.ok)
+                  )
+                }
+                .andThen {
+                  case Success(x) =>
+                    log.info("Successfully created app-instance {#{}}!", appId)
+                    askApp[Instance.Config](appId, ReloadConfig())
+                }
+            )
+          }} ~ die(`json required`)
+        } ~
+        (path("delete") & `json/post`) {
+          extract(ctx => ctx) { ctx => {
+            die(`not implemented`)
+          }}
+        } ~
+        (path("start") & `json/post`) {
+          extract(ctx => ctx) { ctx => {
+            import Instance.Commands.StartRequest
 
-          // TODO(kudinkin): abstract
-          complete(
-            askApp[Instance.Status](appId, StartRequest())
-              .map { v =>
-                JsObject(
-                  "id"      -> JsString(appId.value),
-                  "result"  -> JsBoolean(true),
-                  "status"  -> v.toJson.asJsObject)
-              }
-          )
-        }}
-      } ~
-      (path("stop") & `json/post`) {
-        extract(ctx => ctx) { ctx => {
-          import Instance.Commands.StopRequest
+            // TODO(kudinkin): abstract
+            complete(
+              askApp[Instance.Status](appId, StartRequest())
+                .map { v =>
+                  JsObject(
+                    "id"      -> JsString(appId.value),
+                    "result"  -> JsBoolean(true),
+                    "status"  -> v.toJson.asJsObject)
+                }
+            )
+          }}
+        } ~
+        (path("stop") & `json/post`) {
+          extract(ctx => ctx) { ctx => {
+            import Instance.Commands.StopRequest
 
-          // TODO(kudinkin): abstract
-          complete(
-            askApp[Instance.Status](appId, StopRequest())
-              .map { v =>
-                JsObject(
-                  "id"      -> JsString(appId.value),
-                  "result"  -> JsBoolean(true),
-                  "status"  -> v.toJson.asJsObject
-                )
-              }
-          )
-        }}
-      }
+            // TODO(kudinkin): abstract
+            complete(
+              askApp[Instance.Status](appId, StopRequest())
+                .map { v =>
+                  JsObject(
+                    "id"      -> JsString(appId.value),
+                    "result"  -> JsBoolean(true),
+                    "status"  -> v.toJson.asJsObject
+                  )
+                }
+            )
+          }}
+        }
   }
 
   override private[endpoints] def appRoute(appId: Instance.Id): Route = {
