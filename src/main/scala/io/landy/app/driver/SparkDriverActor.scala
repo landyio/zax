@@ -36,11 +36,21 @@ class SparkDriverActor(private val sc: SparkContext) extends ExecutingActor {
     (rdds, size)
   }
 
-  def evaluate(model: SparkModel.Model, testSet: RDD[LabeledPoint]): Double = {
-    testSet .map    { p => (p.label, model.predict(p.features).round.toDouble) }
-            .filter { p => p._1 != p._2 }
-            .count
-            .toDouble / testSet.count()
+  def evaluate(model: SparkModel.Model, testSet: RDD[LabeledPoint]): (Double, Double, Double) = {
+    val ps = testSet.map { p => (p.label, model.predict(p.features).round.toDouble) }
+                    .collect()
+
+
+    val tp = ps.count { case (a, b) => a == 1 && b == 1 }
+    val fp = ps.count { case (a, b) => a == 0 && b == 1 }
+    val fn = ps.count { case (a, b) => a == 1 && b == 0 }
+
+    val precision = tp.toDouble / (tp + fp)
+    val recall    = tp.toDouble / (tp + fn)
+
+    val error     = (fp + fn).toDouble / testSet.count()
+
+    (error, precision, recall)
   }
 
   private val SPLIT_RATIO = 0.8
@@ -226,7 +236,7 @@ class SparkDriverActor(private val sc: SparkContext) extends ExecutingActor {
 
     val model = fitter(training, squash(mapping))
 
-    val error = evaluate(model, test)
+    val (error, prec, rec) = evaluate(model, test)
 
     (model, mapping, explanatory, error)
   }
@@ -250,17 +260,27 @@ class SparkDriverActor(private val sc: SparkContext) extends ExecutingActor {
     log.info("Training regressor with sample total of {} elements", sample.size)
 
     val (mapping, explanatory, remapped)  = prepare(sample, categorical)
-    val (training, test)                 = split(remapped)
+    var (training, test)                  = split(remapped)
+
+    val swept = mapping .filter { case (i, m) => m.size > 10 }
+                        .map    { case (i, m) => i }
+                        .toSet
+
+    // _DBG
+    training = tweak(swept, training)
+    training = tweak(swept, test)
 
     val model = fitter(training, squash(mapping))
 
-    val error = evaluate(model, test)
+    val (error, prec, rec) = evaluate(model, test)
 
     log.info(s"Finished training regressor {}   \n" +
              s"Sample #:    ${sample.size}      \n" +
              s"Mapping:     {}                  \n" +
              s"Explanatory: {}                  \n" +
-             s"Error:       {}                  \n", model, mapping, explanatory, error)
+             s"Error:       $error              \n" +
+             s"Precision:   $prec               \n" +
+             s"Recall:      $rec                \n", model, mapping, explanatory)
 
     (model, mapping, explanatory, error)
   }
