@@ -9,6 +9,17 @@ package object util {
   implicit def arrayOps[T](a: Array[T]): ArrayOps[T] = ArrayOps(a)
 
   /**
+    * Random (-string) utilities
+    */
+
+  private def randomString(alphabet: String)(length: Int): String = {
+    val r = new Random()
+    Stream.continually(r.nextInt(alphabet.length)).map(alphabet).take(length).mkString
+  }
+
+  def randomHexString(length: Int): String = randomString("abcdefghijklmnopqrstuvwxyz0123456789")(length)
+
+  /**
     * Reflection
     */
   object Reflect {

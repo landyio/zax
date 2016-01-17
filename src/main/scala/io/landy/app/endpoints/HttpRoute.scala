@@ -19,6 +19,7 @@ import spray.routing._
 import spray.routing.authentication._
 
 import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.duration._
 import scala.util.{Failure, Success}
 
 class PrivateEndpointActor extends HttpServiceActor with PrivateEndpoint
@@ -37,7 +38,7 @@ trait PrivateEndpoint extends AppEndpoint {
   import Storage.Persisters._
 
   @inline
-  private[endpoints] def control(appId: Instance.Id, principal: Principal): Route =
+  private[endpoints] def control(appId: Instance.Id, p: Principal): Route =
     pathPrefix("control") {
       placeholder ~
         (path("config") & `json/get`) {
@@ -123,11 +124,32 @@ trait PrivateEndpoint extends AppEndpoint {
             )
           }}
         }
+    }
+
+  @inline
+  private[endpoints] def samples(appId: Instance.Id, p: Principal): Route = {
+    import Instance.Commands.{DumpSampleRequest, DumpSampleResponse}
+
+    pathPrefix("samples") {
+      placeholder ~ (path("dump") & `json/get`) {
+        extract(identity) { ctx =>
+          complete(
+            askApp[DumpSampleResponse](appId, DumpSampleRequest())(30.seconds)
+              .map { r =>
+                JsObject(
+                  "url" -> JsString(r.url)
+                )
+              }
+          )
+        }
+      }
+    }
   }
 
   override private[endpoints] def appRoute(appId: Instance.Id): Route = {
-    authenticate(authenticator) {
-      p => control(appId, p)
+    authenticate(authenticator) { p =>
+        control(appId, p) ~
+          samples(appId, p)
     }
   }
 
@@ -170,15 +192,9 @@ trait PublicEndpoint extends AppEndpoint {
   }
 
   @inline
-  private[endpoints] def info(appId: Instance.Id): Route = (path("info") & get) {
-    respondWithMediaType(`application/json`) {
-      complete("")
-    }
-  }
-
-  @inline
   private[endpoints] def event(appId: Instance.Id): Route = pathPrefix("event") {
     import io.landy.app.model._
+
     `options/origin` ~
       (path("start") & `json/post`) {
         entity(as[JsObject]) { json => clientIP { ip => {
@@ -236,10 +252,8 @@ trait PublicEndpoint extends AppEndpoint {
       }
   }
 
-  override private[endpoints] def appRoute(appId: Instance.Id): Route =  {
-      info(appId) ~
-        event(appId)
-  }
+  override private[endpoints] def appRoute(appId: Instance.Id): Route =
+    event(appId)
 
   override private[endpoints] def route: Route =
     super[AppEndpoint].route /* ~ super[AppsEndpoint].route */
@@ -282,8 +296,8 @@ trait AppEndpoint extends Endpoint {
   override private[endpoints] def route: Route = {
     import Storage.padId
     pathPrefix("app" / Segment) {
-      segment: String => {
-        appRoute(Instance.Id(padId(segment)))
+      id => {
+        appRoute(Instance.Id(padId(id)))
       }
     }
   }
@@ -335,7 +349,12 @@ trait Service extends HttpService with JsonSupport
     }
   }
 
-  private val authSchemeConfig = ConfigFactory.load()
+  private val auth = new {
+    private val conf = ConfigFactory.load()
+
+    val scheme  = conf.getString("spray.routing.private.scheme")
+    val token   = conf.getString("spray.routing.private.token")
+  }
 
   type TokenAuthenticator[T] = Option[(String, String)] => Future[Option[T]]
 
@@ -364,9 +383,8 @@ trait Service extends HttpService with JsonSupport
           Future {
             params.flatMap {
               case (scheme, token) =>
-                if (authSchemeConfig.getString("spray.routing.private.scheme").equalsIgnoreCase(token)
-                &&  authSchemeConfig.getString("spray.routing.private.token") .equals(token)) Some(God)
-                else                                                                          None
+                if (auth.scheme.equalsIgnoreCase(scheme) && auth.token.equals(token)) Some(God)
+                else                                                                  None
             }
           }
     )

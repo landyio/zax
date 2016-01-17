@@ -121,6 +121,12 @@ libraryDependencies ++= {
 
 libraryDependencies ++= {
   Seq(
+    "com.amazonaws" % "aws-java-sdk-s3" % "1.10.47"
+  )
+}
+
+libraryDependencies ++= {
+  Seq(
     "com.maxmind.geoip2" % "geoip2" % "2.4.0"
   )
 }

@@ -11,7 +11,7 @@ import io.landy.app.ml.{Models, SparkRegressionModel, SparkModel, SparkClassific
 import io.landy.app.model._
 import io.landy.app.storage.Storage
 import io.landy.app.storage.Storage.Commands.{Update, UpdateResponse}
-import io.landy.app.util.{Identity, Reflect, boolean2Int}
+import io.landy.app.util.{AWS, Identity, Reflect, boolean2Int, randomHexString}
 
 import scala.collection.BitSet
 import scala.compat.Platform
@@ -91,13 +91,11 @@ class InstanceActor(val appId: Instance.Id, private var config: Instance.Config)
 
     import SparkDriverActor.Commands.{TrainRegressor, TrainRegressorResponse}
 
-    val MAX_SAMPLE_SIZE_THRESHOLD = 1 << 14
-
     checkEligibility.flatMap {
 
       case true => switchState(State.Training).flatMap { _ =>
 
-          buildTrainingSample(MAX_SAMPLE_SIZE_THRESHOLD)
+        buildTrainingSample()
             .flatMap { sample =>
               ask[TrainRegressorResponse](
                 sparkDriverRef,
@@ -270,7 +268,9 @@ class InstanceActor(val appId: Instance.Id, private var config: Instance.Config)
       }
   }
 
-  private def buildTrainingSample(maxSize: Int): Future[Seq[((UserIdentity, Variation.Id), Goal#Type)]] = {
+  private val MAX_SAMPLE_SIZE_THRESHOLD = 1 << 14
+
+  private def buildTrainingSample(maxSize: Int = MAX_SAMPLE_SIZE_THRESHOLD): Future[Seq[((UserIdentity, Variation.Id), Goal#Type)]] = {
     import Storage.Commands.{Load, LoadResponse}
     import Storage.Persisters._
 
@@ -303,7 +303,6 @@ class InstanceActor(val appId: Instance.Id, private var config: Instance.Config)
         log.error(t, "Failed to compose training sample (#{{}})!", appId)
     }
   }
-
 
   //
   // Controlling hooks
@@ -370,6 +369,44 @@ class InstanceActor(val appId: Instance.Id, private var config: Instance.Config)
         stop() pipeTo sender()
       }
 
+    case Commands.DumpSampleRequest() =>
+      runState except State.Suspended or
+                      State.Loading then {
+
+        buildTrainingSample()
+          .map { s =>
+
+            val b = new StringBuilder()
+
+            config.userDataDescriptors.foreach { d =>
+              b .append(d.name)
+                .append(",")
+            }
+
+            b.append("variation,result\n")
+
+            s.foreach {
+              case ((id, vid), r) =>
+                id.get(config.userDataDescriptors).foreach { v =>
+                  b .append(v)
+                    .append(",")
+                }
+
+                b .append(vid.value)
+                  .append(",")
+                  .append(r)
+                  .append("\n")
+            }
+
+            Commands.DumpSampleResponse(
+              url = AWS.S3.uploadTo(b.mkString.getBytes(), s"${appId.value}/${randomHexString(16)}.csv")
+            )
+          }
+          .andThen {
+            case Failure(t) => log.error(t, "Uploading samples for the app #{{}} failed!", appId)
+          } pipeTo sender()
+      }
+
     case Commands.Suicide() => commitSuicide()
   }
 
@@ -414,7 +451,6 @@ class InstanceActor(val appId: Instance.Id, private var config: Instance.Config)
     context.system.scheduler.scheduleOnce(2.minutes) { self ! Commands.Suicide() }
   }
 }
-
 
 object Instance {
 
@@ -607,6 +643,9 @@ object Instance {
 
     private[instance] case class TrainRequest() extends AutoStartMessage[TrainResponse]
     private[instance] case class TrainResponse(error: Double)
+
+    case class DumpSampleRequest() extends AutoStartMessage[DumpSampleResponse]
+    case class DumpSampleResponse(url: String)
 
   }
 

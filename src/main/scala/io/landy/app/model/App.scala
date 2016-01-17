@@ -17,6 +17,9 @@ trait Goal {
 case class UserIdentity(params: UserIdentity.Params) {
   def ++(ps: UserIdentity.Params) = UserIdentity(params ++ ps)
 
+  def get(descriptors: Seq[UserDataDescriptor]): Seq[String] =
+    descriptors.map { d => params.getOrElse(d.name, "") }
+
   def toFeatures(descriptors: Seq[UserDataDescriptor]): Vector[Double] =
     descriptors .map { d => d.hash(params.get(d.name)).toDouble }
                 .toVector
