@@ -89,7 +89,7 @@ libraryDependencies ++= {
 }
 
 libraryDependencies ++= {
-  val sparkVersion = "1.5.2"
+  val sparkVersion = "1.6.0"
   Seq(
     "org.apache.spark" %% "spark-core" % sparkVersion withSources(),
     "org.apache.spark" %% "spark-mllib" % sparkVersion withSources()
@@ -99,7 +99,7 @@ libraryDependencies ++= {
 libraryDependencies ++= {
   Seq(
     "com.typesafe.play"  %% "play-iteratees" % "2.4.2",
-    "org.reactivemongo"  %% "reactivemongo"  % "0.11.7"
+    "org.reactivemongo"  %% "reactivemongo"  % "0.11.9"
   )
 }
 
