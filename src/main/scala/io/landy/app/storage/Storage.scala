@@ -9,6 +9,7 @@ import io.landy.app.ml._
 import io.landy.app.model._
 import io.landy.app.util.Logging
 import org.apache.commons.lang.StringUtils
+import reactivemongo.bson
 import reactivemongo.bson.DefaultBSONHandlers
 
 import scala.concurrent.Future
@@ -64,6 +65,7 @@ class StorageActor extends ExecutingActor {
 
       val c = find(persister.database)(persister.collection)
       val r = c .find(selector)
+                .sort(BSONDocument(`_id` -> -1))
                 .cursor[persister.Target](ReadPreference.Nearest(filterTag = None))
                 .collect[List](upTo, stopOnError = false)
 
