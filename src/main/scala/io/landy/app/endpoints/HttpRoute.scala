@@ -4,6 +4,7 @@ import akka.actor._
 import akka.util.Timeout
 import com.typesafe.config.ConfigFactory
 import io.landy.app.actors.{Logging, AskSupport, DefaultTimeout}
+import io.landy.app.instance.Instance.Id
 import io.landy.app.instance._
 import io.landy.app.model._
 import io.landy.app.endpoints.serialization.JsonSupport
@@ -24,6 +25,11 @@ import scala.util.{Failure, Success}
 
 class PrivateEndpointActor extends HttpServiceActor with PrivateEndpoint
                                                     with ActorLogging {
+
+  val config = ConfigFactory.load()
+
+  override def isAuthenticationEnabled: Boolean = config.getBoolean("spray.routing.private.authentication.enabled")
+
   def receive = runRoute(route)
 }
 
@@ -36,6 +42,8 @@ class PublicEndpointActor extends HttpServiceActor  with PublicEndpoint
 trait PrivateEndpoint extends AppEndpoint {
 
   import Storage.Persisters._
+
+  def isAuthenticationEnabled: Boolean
 
   @inline
   private[endpoints] def control(appId: Instance.Id, p: Principal): Route =
@@ -147,12 +155,18 @@ trait PrivateEndpoint extends AppEndpoint {
   }
 
   override private[endpoints] def appRoute(appId: Instance.Id): Route = {
-    authenticate(authenticator) { p =>
-        control(appId, p) ~
-          samples(appId, p)
-    }
+    if (isAuthenticationEnabled)
+      authenticate(authenticator) { p =>
+          forwardRoute(appId, p)
+      }
+    else
+      forwardRoute(appId, null)
   }
 
+  def forwardRoute(appId: Id, p: Principal): Route = {
+    control(appId, p) ~
+      samples(appId, p)
+  }
 }
 
 
@@ -352,16 +366,16 @@ trait Service extends HttpService with JsonSupport
   private val auth = new {
     private val conf = ConfigFactory.load()
 
-    val scheme  = conf.getString("spray.routing.private.scheme")
-    val token   = conf.getString("spray.routing.private.token")
+    val scheme  = conf.getString("spray.routing.private.authentication.scheme")
+    val token   = conf.getString("spray.routing.private.authentication.token")
   }
 
   type TokenAuthenticator[T] = Option[(String, String)] => Future[Option[T]]
 
   case class BasicTokenAuthenticator(
     realm: String,
-    tokenAuthenticator: TokenAuthenticator[Principal])(implicit val executionContext: ExecutionContext
-  ) extends HttpAuthenticator[Principal] {
+    tokenAuthenticator: TokenAuthenticator[Principal]
+  )(implicit val executionContext: ExecutionContext) extends HttpAuthenticator[Principal] {
 
     override def authenticate(credentials: Option[HttpCredentials], ctx: RequestContext): Future[Option[Principal]] =
       tokenAuthenticator {
