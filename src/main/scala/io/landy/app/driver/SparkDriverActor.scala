@@ -53,7 +53,7 @@ class SparkDriverActor(private val sc: SparkContext) extends ExecutingActor {
     (error, precision, recall)
   }
 
-  private val SPLIT_RATIO = 0.8
+  private val SPLIT_RATIO = 0.7
 
   private def merge[K, V, S[X] <: Set[X]](one: Map[K, S[V]], other: Map[K, S[V]])(implicit cbf: CanBuildFrom[Nothing, V, S[V]]): Map[K, S[V]] =
     one.foldLeft(other) {
@@ -351,7 +351,7 @@ class SparkDriverActor(private val sc: SparkContext) extends ExecutingActor {
           val (model, mapping, explanatory, error) =
             fitRegressor(sample, categoricalFeatures,
               DecisionTreeRegressorFitter(
-                maxBins     = 512,
+                maxBins     = 4096,
                 maxDepth    = 24,
                 impurity    = "variance"
               )
@@ -368,9 +368,9 @@ class SparkDriverActor(private val sc: SparkContext) extends ExecutingActor {
           val (model, mapping, explanatory, error) =
             fitRegressor(sample, categoricalFeatures,
               RandomForestRegressorFitter(
-                numTrees              = 3,
+                numTrees              = math.sqrt(sample.length).toInt,
                 featureSubsetStrategy = "auto",
-                maxBins               = 512,
+                maxBins               = 4096,
                 maxDepth              = 24,
                 impurity              = "variance"
               )
