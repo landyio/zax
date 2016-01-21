@@ -78,8 +78,8 @@ class SparkDriverActor(private val sc: SparkContext) extends ExecutingActor {
       // (bs, p) => merge(bs,  bs.keys.map { case i => i -> HashSet(p.features(i)) }.toMap)(HashSet.canBuildFrom),
       // (l, r)  => merge(l,   r)                                                          (HashSet.canBuildFrom)
 
-      (bs, p)   => bs.zip(p.features.toArray ).map { case (vs, v) => vs + v },
-      (bs, bs0) => bs.zip(bs0).map { case (vs, vs0) => vs.union(vs0) }
+      (bs, p) => bs.zip(p.features.toArray).map { case (vs, v) => vs + v },
+      (l, r)  => l.zip(r).map { case (l, r) => l.union(r) }
     )
   }
 
@@ -87,15 +87,15 @@ class SparkDriverActor(private val sc: SparkContext) extends ExecutingActor {
     : (Map[Int, Map[Double, Int]], Set[Int], RDD[LabeledPoint]) = {
 
     // Detect which features are _explanatory_ (ie particularly relevant ones)
-    val explanatory = supports.indices.filter { i => supports(i).size > 1 }.toSet
+    val explanatory = deviseExplanatory(supports)
 
     // Create mapping replacing raw values (seen in training set for
     // particular _categorical_ feature) with int from range `0 .. support-size`
     val mapping =
       categorical
         .toSeq
-        .filter { explanatory(_) }
-        .map    { case i => i -> supports(i).zipWithIndex.toMap }
+        .filter { explanatory }
+        .map    { i => i -> supports(i).zipWithIndex.toMap }
         .toMap
 
     val remapped =
@@ -114,6 +114,19 @@ class SparkDriverActor(private val sc: SparkContext) extends ExecutingActor {
       }
 
     (mapping, explanatory, remapped)
+  }
+
+  /**
+    * Utility to devise whether particular feature is explanatory or not
+    * (ie of any particular value for the training proc)
+    *
+    * @param supports features' supports
+    * @return         index-set of those decided to be explanatory ones
+    */
+  def deviseExplanatory(supports: IndexedSeq[Set[Double]]): Set[Int] = {
+    supports.indices.filter {
+      i => supports(i).size > 1 // && supports(i).size <= 10
+    }.toSet
   }
 
   /**
@@ -200,7 +213,7 @@ class SparkDriverActor(private val sc: SparkContext) extends ExecutingActor {
   }
 
   /**
-    * See @DecisionTree.trainRegressor for details
+    * See @RandomForest.trainRegressor for details
     */
   case class RandomForestRegressorFitter(
     numTrees:               Int,
@@ -260,27 +273,23 @@ class SparkDriverActor(private val sc: SparkContext) extends ExecutingActor {
     log.info("Training regressor with sample total of {} elements", sample.size)
 
     val (mapping, explanatory, remapped)  = prepare(sample, categorical)
-    var (training, test)                  = split(remapped)
-
-    val swept = mapping .filter { case (i, m) => m.size > 10 }
-                        .map    { case (i, m) => i }
-                        .toSet
-
-    // _DBG
-    training = tweak(swept, training)
-    training = tweak(swept, test)
+    val (training, test)                  = split(remapped)
 
     val model = fitter(training, squash(mapping))
 
-    val (error, prec, rec) = evaluate(model, test)
+    val (error, prec, rec)  = evaluate(model,     test)
+    val (derror, _, _)      = evaluate(Baseline,  test)
 
     log.info(s"Finished training regressor {}   \n" +
              s"Sample #:    ${sample.size}      \n" +
              s"Mapping:     {}                  \n" +
              s"Explanatory: {}                  \n" +
-             s"Error:       $error              \n" +
-             s"Precision:   $prec               \n" +
-             s"Recall:      $rec                \n", model, mapping, explanatory)
+             s"Trained:                         \n" +
+             s"   Error:       $error           \n" +
+             s"   Precision:   $prec            \n" +
+             s"   Recall:      $rec             \n" +
+             s"Dumb:                            \n" +
+             s"   Error:       $derror          \n", model, mapping, explanatory)
 
     (model, mapping, explanatory, error)
   }

@@ -38,6 +38,15 @@ sealed trait SparkModel[+T <: SparkModel.Model] {
     model.predict(Vectors.dense(x(seq).toArray))
 }
 
+/**
+  * Model mimic'ing degenerate case of pessimistic oracle,
+  * de-marking the baseline equal to the conversion-rate inside the sample
+  */
+object Baseline extends Serializable {
+  def predict(features: Vector): Double = 0.0
+  def predict(ps: RDD[Vector]): RDD[Double] = ps.map(predict)
+}
+
 @directSubclasses(
   Array(
     classOf[SparkDecisionTreeRegressionModel], classOf[SparkDecisionTreeClassificationModel],
