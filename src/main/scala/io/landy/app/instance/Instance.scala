@@ -346,9 +346,13 @@ class InstanceActor(val appId: Instance.Id, private var config: Instance.Config)
     case Commands.PredictRequest(uid) =>
       runState except State.Suspended or
                       State.Loading   then {
+
+        // NOTA BENE:
+        //  This order is crucial
+        sender  ! Commands.PredictResponse(predict(uid), runState)
+
         // TODO(kudinkin): move?
         self    ! Commands.TrainRequest()
-        sender  ! Commands.PredictResponse(predict(uid), runState)
       }
 
     case Commands.TrainRequest() =>
@@ -440,10 +444,12 @@ class InstanceActor(val appId: Instance.Id, private var config: Instance.Config)
     Await.ready(
       reloadConfig()
         .andThen {
-          case Success(_) => assureCoherent()
+          case Success(_) =>
+            assureCoherent()
+            log.debug("Successfully started app-instance for #{{}}!", appId)
           case Failure(t) =>
-            log.debug("Failed to start actor for the app #{{}}! Reason: {}", appId, t.getMessage)
             takePoison()
+            log.debug("Failed to start actor for the app #{{}}! Reason: {}", appId, t.getMessage)
         },
       30.seconds
     )
