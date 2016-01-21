@@ -11,7 +11,6 @@ import io.landy.app.endpoints.serialization.JsonSupport
 import io.landy.app.storage.Storage
 import io.landy.app.App
 import io.landy.app.util.geo.Resolver
-import io.landy.app.util.geo.Resolver.Unknown
 import spray.http.HttpHeaders.{`WWW-Authenticate`, RawHeader}
 import spray.http.MediaTypes._
 import spray.http._
@@ -182,11 +181,7 @@ trait PublicEndpoint extends AppEndpoint {
       oip .map {
             case ip =>
               (Resolver(ip) match {
-                case Unknown  => Seq()
-                case city     => Seq(
-                                    "city"    -> city.name,
-                                    "country" -> city.country
-                                  )
+                case Resolver.City(name, country) => Seq("city" -> name, "country" -> country)
               }) ++ Seq("ip" -> ip.getHostAddress)
           }
           .getOrElse(

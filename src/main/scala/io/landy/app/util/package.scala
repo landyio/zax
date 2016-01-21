@@ -6,7 +6,11 @@ import scala.util.Random
 package object util {
 
   implicit def boolean2Int(b: Boolean): Int = if (b) 1 else 0
+
+  implicit def anyRef2ElvisOps[T <: AnyRef](o: T): ElvisOps[T] = ElvisOps(o)
+
   implicit def arrayOps[T](a: Array[T]): ArrayOps[T] = ArrayOps(a)
+
 
   /**
     * Random (-string) utilities
@@ -45,4 +49,12 @@ package object util {
       if (a.length > 0) Some(a(new Random().nextInt(a.length)))
       else              None
   }
+
+  /**
+    * Useful extension emulating wide-spread elvis operator (C#, Kotlin, etc.)
+    */
+  case class ElvisOps[T](one: T) {
+    def `??`(other: T) = if (one != null) one else other
+  }
+
 }
