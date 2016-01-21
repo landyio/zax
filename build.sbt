@@ -3,7 +3,7 @@ import sbt._
 
 lazy val common = Seq(
   organization  := "io.landy",
-  version       := "0.1.3",
+  version       := "0.2.0",
 
   scalaVersion      := "2.11.7",
   autoScalaLibrary  := false,
