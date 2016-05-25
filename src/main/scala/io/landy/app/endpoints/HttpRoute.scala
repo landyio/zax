@@ -206,7 +206,8 @@ trait PublicEndpoint extends AppEndpoint {
 
     `options/origin` ~
       (path("start") & `json/post`) {
-        entity(as[JsObject]) { json => clientIP { ip => {
+        entity(as[String]) { body => clientIP { ip => {
+          val json = JsonParser(body)
           val ev = json.convertTo[StartEvent]
 
           storeFor(appId, ev.copy(  appId     = appId,
@@ -223,7 +224,8 @@ trait PublicEndpoint extends AppEndpoint {
         }}} ~ die(`json required`)
       } ~
       (path("predict") & `json/post`) {
-        entity(as[JsObject]) { json => clientIP { ip => {
+        entity(as[String]) { body => clientIP { ip => {
+          val json = JsonParser(body)
           val ev = json.convertTo[PredictEvent].copy(appId = appId)
 
           val identity = ev.identity ++ mapAdditionalInfo(ip, ev.timestamp)
@@ -250,8 +252,9 @@ trait PublicEndpoint extends AppEndpoint {
         }}} ~ die(`json required`)
       } ~
       (path("finish") & `json/post`) {
-        entity(as[JsObject]) { json => {
-          val ev: FinishEvent = json.convertTo[FinishEvent]
+        entity(as[String]) { body => {
+          val json = JsonParser(body)
+          val ev = json.convertTo[FinishEvent]
 
           storeFor(appId, ev.copy(appId     = appId,
                                   timestamp = System.currentTimeMillis()))
